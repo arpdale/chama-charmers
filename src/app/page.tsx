@@ -90,6 +90,20 @@ export default function Home() {
     }, 1500);
   }, []);
 
+  const handleDelete = useCallback(
+    async (item: MediaItem) => {
+      if (!uploaderName || uploaderName !== item.uploaded_by) return;
+      if (!window.confirm(`Delete "${item.file_name}"?`)) return;
+
+      await supabase.storage.from("media").remove([item.file_path]);
+      await supabase.from("media").delete().eq("id", item.id);
+
+      setMedia((prev) => prev.filter((m) => m.id !== item.id));
+      if (lightboxItem?.id === item.id) setLightboxItem(null);
+    },
+    [uploaderName, lightboxItem]
+  );
+
   const uploaders = [...new Set(media.map((m) => m.uploaded_by))];
   const filteredMedia =
     filter === "all" ? media : media.filter((m) => m.uploaded_by === filter);
@@ -200,8 +214,10 @@ export default function Home() {
           <MediaGrid
             items={filteredMedia}
             uploadingItems={uploadingItems}
+            currentUser={uploaderName}
             onItemClick={(item) => setLightboxItem(item)}
             onCancelUpload={handleCancelUpload}
+            onDelete={handleDelete}
           />
         )}
       </main>
@@ -211,8 +227,10 @@ export default function Home() {
         <Lightbox
           item={lightboxItem}
           items={filteredMedia}
+          currentUser={uploaderName}
           onClose={() => setLightboxItem(null)}
           onNavigate={(item) => setLightboxItem(item)}
+          onDelete={handleDelete}
         />
       )}
     </div>
