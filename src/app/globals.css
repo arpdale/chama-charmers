@@ -34,39 +34,40 @@ body {
 }
 
 .media-grid {
-  columns: 2;
-  column-gap: 8px;
-}
-
-@media (min-width: 640px) {
-  .media-grid { columns: 3; column-gap: 12px; }
-}
-
-@media (min-width: 1024px) {
-  .media-grid { columns: 4; column-gap: 12px; }
-}
-
-@media (min-width: 1280px) {
-  .media-grid { columns: 5; column-gap: 12px; }
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .media-grid-item {
-  break-inside: avoid;
-  margin-bottom: 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: var(--card-shadow);
-}
-
-@media (min-width: 640px) {
-  .media-grid-item { margin-bottom: 12px; }
+  position: relative;
+  transition: opacity 0.2s ease;
 }
 
 .media-grid-item:hover {
-  transform: scale(1.02);
-  box-shadow: var(--card-shadow-hover);
+  opacity: 0.9;
+}
+
+.media-grid-item {
+  background: var(--border);
+}
+
+.media-grid-item img,
+.media-grid-item video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.media-grid-item img.loaded,
+.media-grid-item video.loaded {
+  opacity: 1;
 }
 
 .lightbox-overlay {
