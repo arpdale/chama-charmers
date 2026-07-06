@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const FRIENDS = ["David", "Alex", "Jordan", "Sam"];
+const FRIENDS = ["David", "Jeff", "Ernesto", "Nirav"];
 
 type Props = {
   onSelect: (name: string) => void;
