@@ -76,10 +76,22 @@ export default function Lightbox({ item, items, onClose, onNavigate }: Props) {
     >
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4 z-10">
-        <div className="text-white/80 text-sm">
+        <div className="text-white/80 text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium">{item.uploaded_by}</span>
-          <span className="mx-2">&middot;</span>
+          <span>&middot;</span>
           <span>{formatDate(item.taken_at || item.created_at)}</span>
+          {item.camera_model && (
+            <>
+              <span>&middot;</span>
+              <span className="text-white/50">{item.camera_model}</span>
+            </>
+          )}
+          {item.width && item.height && (
+            <>
+              <span>&middot;</span>
+              <span className="text-white/50">{item.width}&times;{item.height}</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button

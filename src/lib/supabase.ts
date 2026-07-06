@@ -16,4 +16,7 @@ export type MediaItem = {
   uploaded_by: string;
   taken_at: string | null;
   created_at: string;
+  camera_model: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
