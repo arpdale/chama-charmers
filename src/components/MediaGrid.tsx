@@ -1,11 +1,14 @@
 "use client";
 
 import { MediaItem } from "@/lib/supabase";
+import { UploadingItem } from "@/lib/upload";
 import { supabase } from "@/lib/supabase";
 
 type Props = {
   items: MediaItem[];
+  uploadingItems: UploadingItem[];
   onItemClick: (item: MediaItem) => void;
+  onCancelUpload: (id: string) => void;
 };
 
 function getPublicUrl(filePath: string) {
@@ -47,6 +50,16 @@ const AVATAR_COLORS: Record<string, string> = {
   F: "#3b82f6",
   G: "#8b5cf6",
   H: "#ec4899",
+  I: "#14b8a6",
+  J: "#f59e0b",
+  K: "#6366f1",
+  L: "#84cc16",
+  M: "#e11d48",
+  N: "#0ea5e9",
+  O: "#a855f7",
+  P: "#f43f5e",
+  R: "#10b981",
+  S: "#7c3aed",
 };
 
 function getAvatarColor(name: string) {
@@ -54,15 +67,119 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[letter] || "#6b7280";
 }
 
-export default function MediaGrid({ items, onItemClick }: Props) {
-  if (items.length === 0) {
+function ProgressRing({ progress }: { progress: number }) {
+  const radius = 20;
+  const stroke = 3;
+  const normalizedRadius = radius - stroke;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <svg width={radius * 2} height={radius * 2} className="rotate-[-90deg]">
+      <circle
+        stroke="rgba(255,255,255,0.3)"
+        fill="none"
+        strokeWidth={stroke}
+        r={normalizedRadius}
+        cx={radius}
+        cy={radius}
+      />
+      <circle
+        stroke="white"
+        fill="none"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        r={normalizedRadius}
+        cx={radius}
+        cy={radius}
+        style={{
+          strokeDasharray: `${circumference} ${circumference}`,
+          strokeDashoffset,
+          transition: "stroke-dashoffset 0.3s ease",
+        }}
+      />
+    </svg>
+  );
+}
+
+function UploadingCard({
+  item,
+  onCancel,
+}: {
+  item: UploadingItem;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="media-grid-item relative">
+      {isVideo(item.mime_type) ? (
+        <video
+          src={item.previewUrl}
+          className="w-full h-auto block opacity-60"
+          muted
+          preload="metadata"
+        />
+      ) : (
+        <img
+          src={item.previewUrl}
+          alt=""
+          className="w-full h-auto block opacity-60"
+        />
+      )}
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40">
+        {item.status === "uploading" && (
+          <>
+            <ProgressRing progress={item.progress} />
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+              className="mt-2 text-white/80 hover:text-white text-xs font-medium px-2 py-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            >
+              Cancel
+            </button>
+          </>
+        )}
+        {item.status === "error" && (
+          <div className="text-red-400 text-sm font-medium">Failed</div>
+        )}
+        {item.status === "cancelled" && (
+          <div className="text-white/60 text-sm font-medium">Cancelled</div>
+        )}
+        {item.status === "done" && (
+          <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function MediaGrid({
+  items,
+  uploadingItems,
+  onItemClick,
+  onCancelUpload,
+}: Props) {
+  if (items.length === 0 && uploadingItems.length === 0) {
     return (
       <div className="text-center py-24 space-y-4">
-        <div className="text-6xl opacity-30">
-          <svg className="w-20 h-20 mx-auto" style={{ color: "var(--muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        </div>
+        <svg
+          className="w-20 h-20 mx-auto"
+          style={{ color: "var(--muted)", opacity: 0.3 }}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1}
+            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+          />
+        </svg>
         <p className="text-xl font-medium" style={{ color: "var(--muted)" }}>
           No photos yet
         </p>
@@ -74,9 +191,35 @@ export default function MediaGrid({ items, onItemClick }: Props) {
   }
 
   const groups = groupByDate(items);
+  const activeUploads = uploadingItems.filter(
+    (u) => u.status === "uploading" || u.status === "error"
+  );
 
   return (
     <div className="space-y-8">
+      {/* Uploading items at top */}
+      {activeUploads.length > 0 && (
+        <div>
+          <h2
+            className="text-sm font-semibold uppercase tracking-wider mb-4 sticky top-0 py-2 z-10"
+            style={{ color: "var(--accent)", background: "var(--background)" }}
+          >
+            Uploading {activeUploads.length}{" "}
+            {activeUploads.length === 1 ? "file" : "files"}...
+          </h2>
+          <div className="media-grid">
+            {activeUploads.map((item) => (
+              <UploadingCard
+                key={item.id}
+                item={item}
+                onCancel={() => onCancelUpload(item.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Existing media grouped by date */}
       {groups.map(([date, groupItems]) => (
         <div key={date}>
           <h2
@@ -102,7 +245,11 @@ export default function MediaGrid({ items, onItemClick }: Props) {
                     />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                        <svg
+                          className="w-5 h-5 text-white ml-0.5"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
                           <path d="M8 5v14l11-7z" />
                         </svg>
                       </div>

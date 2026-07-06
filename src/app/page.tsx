@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase, MediaItem } from "@/lib/supabase";
+import { UploadingItem, createUploadingItem, uploadFile } from "@/lib/upload";
 import UploadZone from "@/components/UploadZone";
 import MediaGrid from "@/components/MediaGrid";
 import Lightbox from "@/components/Lightbox";
@@ -14,14 +15,13 @@ export default function Home() {
   const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [showUpload, setShowUpload] = useState(false);
+  const [uploadingItems, setUploadingItems] = useState<UploadingItem[]>([]);
 
   const fetchMedia = useCallback(async () => {
-    const query = supabase
+    const { data } = await supabase
       .from("media")
       .select("*")
       .order("created_at", { ascending: false });
-
-    const { data } = await query;
     setMedia((data as MediaItem[]) || []);
     setLoading(false);
   }, []);
@@ -37,11 +37,62 @@ export default function Home() {
     localStorage.setItem("chama-uploader-name", name);
   };
 
+  const handleFilesSelected = useCallback(
+    (files: File[]) => {
+      if (!uploaderName) return;
+
+      const newItems = files.map(createUploadingItem);
+      setUploadingItems((prev) => [...newItems, ...prev]);
+      setShowUpload(false);
+
+      newItems.forEach((item) => {
+        uploadFile(item, uploaderName, (progress) => {
+          setUploadingItems((prev) =>
+            prev.map((u) => (u.id === item.id ? { ...u, progress } : u))
+          );
+        }).then((success) => {
+          setUploadingItems((prev) =>
+            prev.map((u) =>
+              u.id === item.id
+                ? { ...u, status: success ? "done" : "error", progress: success ? 100 : u.progress }
+                : u
+            )
+          );
+          if (success) {
+            fetchMedia();
+            setTimeout(() => {
+              setUploadingItems((prev) => prev.filter((u) => u.id !== item.id));
+              URL.revokeObjectURL(item.previewUrl);
+            }, 2000);
+          }
+        });
+      });
+    },
+    [uploaderName, fetchMedia]
+  );
+
+  const handleCancelUpload = useCallback((id: string) => {
+    setUploadingItems((prev) =>
+      prev.map((u) => {
+        if (u.id === id) {
+          u.abortController.abort();
+          return { ...u, status: "cancelled" as const };
+        }
+        return u;
+      })
+    );
+    setTimeout(() => {
+      setUploadingItems((prev) => {
+        const item = prev.find((u) => u.id === id);
+        if (item) URL.revokeObjectURL(item.previewUrl);
+        return prev.filter((u) => u.id !== id);
+      });
+    }, 1500);
+  }, []);
+
   const uploaders = [...new Set(media.map((m) => m.uploaded_by))];
   const filteredMedia =
     filter === "all" ? media : media.filter((m) => m.uploaded_by === filter);
-
-  const flatItems = filteredMedia;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -85,18 +136,8 @@ export default function Home() {
             className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium text-white transition-all hover:scale-105 active:scale-95"
             style={{ background: "var(--accent)" }}
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             <span className="hidden sm:inline">Add Photos</span>
           </button>
@@ -106,13 +147,7 @@ export default function Home() {
       {/* Upload section */}
       {showUpload && uploaderName && (
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6">
-          <UploadZone
-            uploaderName={uploaderName}
-            onUploadComplete={() => {
-              fetchMedia();
-              setShowUpload(false);
-            }}
-          />
+          <UploadZone onFilesSelected={handleFilesSelected} />
         </div>
       )}
 
@@ -126,8 +161,7 @@ export default function Home() {
                 filter === "all" ? "text-white" : ""
               }`}
               style={{
-                background:
-                  filter === "all" ? "var(--accent)" : "var(--border)",
+                background: filter === "all" ? "var(--accent)" : "var(--border)",
               }}
             >
               All
@@ -140,8 +174,7 @@ export default function Home() {
                   filter === name ? "text-white" : ""
                 }`}
                 style={{
-                  background:
-                    filter === name ? "var(--accent)" : "var(--border)",
+                  background: filter === name ? "var(--accent)" : "var(--border)",
                 }}
               >
                 {name}
@@ -166,7 +199,9 @@ export default function Home() {
         ) : (
           <MediaGrid
             items={filteredMedia}
+            uploadingItems={uploadingItems}
             onItemClick={(item) => setLightboxItem(item)}
+            onCancelUpload={handleCancelUpload}
           />
         )}
       </main>
@@ -175,7 +210,7 @@ export default function Home() {
       {lightboxItem && (
         <Lightbox
           item={lightboxItem}
-          items={flatItems}
+          items={filteredMedia}
           onClose={() => setLightboxItem(null)}
           onNavigate={(item) => setLightboxItem(item)}
         />
