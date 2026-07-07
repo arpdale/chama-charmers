@@ -34,9 +34,95 @@ function isVideo(mimeType: string) {
   return mimeType.startsWith("video/");
 }
 
+const posterBackfillAttempted = new Set<string>();
+
+function useLazyPoster(item: MediaItem) {
+  const [posterUrl, setPosterUrl] = useState<string | null>(
+    item.poster_path ? getThumbnailUrl(item.poster_path) : null
+  );
+
+  useEffect(() => {
+    if (item.poster_path || !isVideo(item.mime_type)) return;
+    if (posterBackfillAttempted.has(item.id)) return;
+    posterBackfillAttempted.add(item.id);
+
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+    const src = getPublicUrl(item.file_path);
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(1, video.duration / 2);
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0);
+        canvas.toBlob(async (blob) => {
+          video.src = "";
+          if (!blob) return;
+          const posterPath = `posters/${item.file_path.replace(/\.[^.]+$/, "")}.jpg`;
+          const { error } = await supabase.storage
+            .from("media")
+            .upload(posterPath, blob, { contentType: "image/jpeg", cacheControl: "31536000" });
+          if (error) return;
+          await supabase.from("media").update({ poster_path: posterPath }).eq("id", item.id);
+          setPosterUrl(getThumbnailUrl(posterPath));
+        }, "image/jpeg", 0.8);
+      } catch { /* best-effort */ }
+    };
+
+    video.onerror = () => { video.src = ""; };
+    const timeout = setTimeout(() => { video.src = ""; }, 30000);
+    video.src = src;
+
+    return () => { clearTimeout(timeout); video.src = ""; };
+  }, [item.id, item.file_path, item.mime_type, item.poster_path]);
+
+  return posterUrl;
+}
+
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function VideoThumbnail({ item }: { item: MediaItem }) {
+  const posterUrl = useLazyPoster(item);
+
+  return (
+    <>
+      {posterUrl ? (
+        <img
+          src={posterUrl}
+          alt={item.file_name}
+          loading="lazy"
+          onLoad={(e) => e.currentTarget.classList.add("loaded")}
+        />
+      ) : (
+        <video
+          src={getPublicUrl(item.file_path)}
+          preload="metadata"
+          muted
+          onLoadedData={(e) => e.currentTarget.classList.add("loaded")}
+        />
+      )}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+          <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </div>
+      </div>
+    </>
+  );
 }
 
 function formatDuration(seconds: number) {
@@ -377,22 +463,7 @@ function JustifiedGrid({
               }}
             >
               {isVideo(item.mime_type) ? (
-                <>
-                  <video
-                    src={getPublicUrl(item.file_path)}
-                    preload="metadata"
-                    muted
-                    onLoadedData={(e) => e.currentTarget.classList.add("loaded")}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                  </div>
-                  <VideoDuration src={getPublicUrl(item.file_path)} />
-                </>
+                <VideoThumbnail item={item} />
               ) : (
                 <img
                   src={getThumbnailUrl(item.file_path)}
