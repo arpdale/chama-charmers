@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { v4 as uuidv4 } from "uuid";
+import * as tus from "tus-js-client";
 import exifr from "exifr";
 
 export type UploadingItem = {
@@ -113,6 +114,59 @@ async function extractExif(file: File): Promise<ExifData> {
   return result;
 }
 
+function tusUpload(
+  file: File,
+  filePath: string,
+  contentType: string,
+  onProgress: (pct: number) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+  return new Promise((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+      retryDelays: [0, 1000, 3000, 5000],
+      headers: {
+        authorization: `Bearer ${supabaseKey}`,
+        "x-upsert": "false",
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      metadata: {
+        bucketName: "media",
+        objectName: filePath,
+        contentType,
+        cacheControl: "3600",
+      },
+      chunkSize: 6 * 1024 * 1024,
+      onError(error) {
+        reject(error);
+      },
+      onProgress(bytesUploaded, bytesTotal) {
+        const pct = Math.round((bytesUploaded / bytesTotal) * 100);
+        onProgress(pct);
+      },
+      onSuccess() {
+        resolve();
+      },
+    });
+
+    signal.addEventListener("abort", () => {
+      upload.abort(true);
+      reject(new Error("Upload cancelled"));
+    });
+
+    upload.findPreviousUploads().then((previousUploads) => {
+      if (previousUploads.length > 0) {
+        upload.resumeFromPreviousUpload(previousUploads[0]);
+      }
+      upload.start();
+    });
+  });
+}
+
 export async function uploadFile(
   item: UploadingItem,
   uploaderName: string,
@@ -124,34 +178,27 @@ export async function uploadFile(
 
   if (item.abortController.signal.aborted) return false;
 
-  onProgress(5);
+  onProgress(2);
 
   const isImage = contentType.startsWith("image/");
-  const exifData = isImage ? await extractExif(item.file) : {
-    taken_at: null, width: null, height: null,
-    camera_model: null, latitude: null, longitude: null,
-  };
+  const exifData = isImage
+    ? await extractExif(item.file)
+    : { taken_at: null, width: null, height: null, camera_model: null, latitude: null, longitude: null };
 
   if (item.abortController.signal.aborted) return false;
 
-  onProgress(15);
-
   try {
-    const { error: storageError } = await supabase.storage
-      .from("media")
-      .upload(filePath, item.file, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType,
-      });
+    await tusUpload(
+      item.file,
+      filePath,
+      contentType,
+      (pct) => onProgress(Math.max(2, Math.min(95, pct))),
+      item.abortController.signal
+    );
 
     if (item.abortController.signal.aborted) return false;
-    if (storageError) {
-      console.error(`[upload] Storage error for ${item.file.name}:`, storageError);
-      throw storageError;
-    }
 
-    onProgress(80);
+    onProgress(97);
 
     const { error: dbError } = await supabase.from("media").insert({
       file_name: item.file.name,
@@ -171,7 +218,7 @@ export async function uploadFile(
     onProgress(100);
     return true;
   } catch (err) {
-    console.error(`[upload] Failed: ${item.file.name} (type=${item.file.type}, resolved=${contentType})`, err);
+    console.error(`[upload] Failed: ${item.file.name} (type=${item.file.type}, resolved=${contentType}, size=${item.file.size})`, err);
     return false;
   }
 }
