@@ -8,6 +8,23 @@ import MediaGrid from "@/components/MediaGrid";
 import Lightbox from "@/components/Lightbox";
 import NamePicker from "@/components/NamePicker";
 
+function getPublicUrl(filePath: string) {
+  return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
+}
+
+async function downloadBlob(url: string, fileName: string) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
 export default function Home() {
   const [uploaderName, setUploaderName] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -17,6 +34,7 @@ export default function Home() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploadingItems, setUploadingItems] = useState<UploadingItem[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,12 +120,71 @@ export default function Home() {
       await supabase.from("media").delete().eq("id", item.id);
 
       setMedia((prev) => prev.filter((m) => m.id !== item.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
       if (lightboxItem?.id === item.id) setLightboxItem(null);
     },
     [uploaderName, lightboxItem]
   );
 
-  // Global drag-and-drop — intercept everywhere so files never open in browser tabs
+  const handleDownloadItem = useCallback(async (item: MediaItem) => {
+    const url = getPublicUrl(item.file_path);
+    await downloadBlob(url, item.file_name);
+  }, []);
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBatchDownload = useCallback(async () => {
+    const selected = media.filter((item) => selectedIds.has(item.id));
+    for (const item of selected) {
+      await downloadBlob(getPublicUrl(item.file_path), item.file_name);
+    }
+    setSelectedIds(new Set());
+  }, [media, selectedIds]);
+
+  const handleBatchDelete = useCallback(async () => {
+    if (!uploaderName) return;
+    const selected = media.filter(
+      (item) => selectedIds.has(item.id) && item.uploaded_by === uploaderName
+    );
+    if (selected.length === 0) return;
+
+    const msg = selected.length === 1
+      ? `Delete "${selected[0].file_name}"?`
+      : `Delete ${selected.length} items?`;
+    if (!window.confirm(msg)) return;
+
+    for (const item of selected) {
+      await supabase.storage.from("media").remove([item.file_path]);
+      await supabase.from("media").delete().eq("id", item.id);
+    }
+
+    const deletedIds = new Set(selected.map((item) => item.id));
+    setMedia((prev) => prev.filter((m) => !deletedIds.has(m.id)));
+    setSelectedIds(new Set());
+    if (lightboxItem && deletedIds.has(lightboxItem.id)) {
+      setLightboxItem(null);
+    }
+  }, [uploaderName, media, selectedIds, lightboxItem]);
+
+  // Global drag-and-drop
   const handlePageDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current++;
@@ -184,7 +261,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Hidden file input for click-to-browse */}
+      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -247,7 +324,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Upload section (toggle) */}
+      {/* Upload section */}
       {showUpload && uploaderName && !isEmpty && (
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6">
           <UploadZone onFilesSelected={handleFilesSelected} />
@@ -291,23 +368,20 @@ export default function Home() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col">
         {loading ? (
           <div className="media-grid">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {[200, 180, 220, 190, 210, 170, 230, 185, 205, 195, 215, 175].map((h, i) => (
               <div
                 key={i}
                 className="media-grid-item skeleton"
-                style={{ height: `${150 + Math.random() * 150}px` }}
+                style={{ height: `${h}px` }}
               />
             ))}
           </div>
         ) : isEmpty ? (
-          /* Empty state — centered drop zone */
           <div
             className="flex-1 flex items-center justify-center cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
           >
-            <div
-              className="drop-zone p-16 sm:p-20 text-center max-w-lg w-full"
-            >
+            <div className="drop-zone p-16 sm:p-20 text-center max-w-lg w-full">
               <svg
                 className="w-16 h-16 mx-auto mb-6"
                 style={{ color: "var(--muted)" }}
@@ -333,9 +407,15 @@ export default function Home() {
             items={filteredMedia}
             uploadingItems={uploadingItems}
             currentUser={uploaderName}
+            selectedIds={selectedIds}
             onItemClick={(item) => setLightboxItem(item)}
             onCancelUpload={handleCancelUpload}
             onDelete={handleDelete}
+            onToggleSelect={handleToggleSelect}
+            onClearSelection={handleClearSelection}
+            onDownload={handleDownloadItem}
+            onBatchDownload={handleBatchDownload}
+            onBatchDelete={handleBatchDelete}
           />
         )}
       </main>
@@ -349,6 +429,7 @@ export default function Home() {
           onClose={() => setLightboxItem(null)}
           onNavigate={(item) => setLightboxItem(item)}
           onDelete={handleDelete}
+          onDownload={handleDownloadItem}
         />
       )}
     </div>

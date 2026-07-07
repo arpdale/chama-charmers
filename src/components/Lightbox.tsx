@@ -11,6 +11,7 @@ type Props = {
   onClose: () => void;
   onNavigate: (item: MediaItem) => void;
   onDelete: (item: MediaItem) => void;
+  onDownload: (item: MediaItem) => void;
 };
 
 function getPublicUrl(filePath: string) {
@@ -31,7 +32,13 @@ function formatDate(dateStr: string) {
   });
 }
 
-export default function Lightbox({ item, items, currentUser, onClose, onNavigate, onDelete }: Props) {
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export default function Lightbox({ item, items, currentUser, onClose, onNavigate, onDelete, onDownload }: Props) {
   const currentIndex = items.findIndex((i) => i.id === item.id);
 
   const goNext = useCallback(() => {
@@ -45,20 +52,6 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
       onNavigate(items[currentIndex - 1]);
     }
   }, [currentIndex, items, onNavigate]);
-
-  const handleDownload = useCallback(async () => {
-    const url = getPublicUrl(item.file_path);
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = item.file_name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  }, [item]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -97,6 +90,8 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
               <span className="text-white/50">{item.width}&times;{item.height}</span>
             </>
           )}
+          <span>&middot;</span>
+          <span className="text-white/50">{formatFileSize(item.file_size)}</span>
         </div>
         <div className="flex items-center gap-3">
           {currentUser && currentUser === item.uploaded_by && (
@@ -116,7 +111,7 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
           <button
             onClick={(e) => {
               e.stopPropagation();
-              handleDownload();
+              onDownload(item);
             }}
             className="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
             title="Download"
