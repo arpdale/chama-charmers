@@ -85,6 +85,11 @@ export default function Home() {
               setUploadingItems((prev) => prev.filter((u) => u.id !== item.id));
               URL.revokeObjectURL(item.previewUrl);
             }, 2000);
+          } else {
+            setTimeout(() => {
+              setUploadingItems((prev) => prev.filter((u) => u.id !== item.id));
+              URL.revokeObjectURL(item.previewUrl);
+            }, 5000);
           }
         });
       });
