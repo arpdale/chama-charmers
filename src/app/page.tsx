@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase, MediaItem } from "@/lib/supabase";
-import { UploadingItem, createUploadingItem, uploadFile } from "@/lib/upload";
+import { UploadingItem, createUploadingItem, uploadFile, isMediaFile } from "@/lib/upload";
 import UploadZone from "@/components/UploadZone";
 import MediaGrid from "@/components/MediaGrid";
 import Lightbox from "@/components/Lightbox";
@@ -211,9 +211,7 @@ export default function Home() {
       dragCounterRef.current = 0;
       setIsDraggingOver(false);
 
-      const files = Array.from(e.dataTransfer.files).filter(
-        (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
-      );
+      const files = Array.from(e.dataTransfer.files).filter(isMediaFile);
       if (files.length > 0) {
         handleFilesSelected(files);
       }
