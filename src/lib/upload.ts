@@ -175,8 +175,11 @@ function tusUpload(
         contentType,
         cacheControl: "3600",
       },
-      chunkSize: 1024 * 1024,
+      chunkSize: file.size > 10 * 1024 * 1024 ? 6 * 1024 * 1024 : 1024 * 1024,
       onError(error) {
+        const detail = (error as { originalResponse?: { getBody?: () => string } })
+          .originalResponse?.getBody?.() || error.message;
+        console.error(`[upload] TUS error for ${filePath}:`, detail);
         reject(error);
       },
       onProgress(bytesUploaded, bytesTotal) {
