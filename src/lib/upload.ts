@@ -97,7 +97,11 @@ export async function uploadFile(
 
   onProgress(5);
 
-  const exifData = await extractExif(item.file);
+  const isImage = item.file.type.startsWith("image/");
+  const exifData = isImage ? await extractExif(item.file) : {
+    taken_at: null, width: null, height: null,
+    camera_model: null, latitude: null, longitude: null,
+  };
 
   if (item.abortController.signal.aborted) return false;
 
