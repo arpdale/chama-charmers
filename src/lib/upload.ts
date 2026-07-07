@@ -21,14 +21,42 @@ type ExifData = {
   longitude: number | null;
 };
 
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
+  "3gp": "video/3gpp",
+};
+
+function resolveContentType(file: File): string {
+  if (file.type && file.type !== "application/octet-stream") {
+    return file.type;
+  }
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  return MIME_BY_EXT[ext] || "application/octet-stream";
+}
+
+export function isMediaFile(file: File): boolean {
+  const type = resolveContentType(file);
+  return type.startsWith("image/") || type.startsWith("video/");
+}
+
 export function createUploadingItem(file: File): UploadingItem {
+  const mime = resolveContentType(file);
   return {
     id: uuidv4(),
     file,
     previewUrl: URL.createObjectURL(file),
     progress: 0,
     status: "uploading",
-    mime_type: file.type,
+    mime_type: mime,
     abortController: new AbortController(),
   };
 }
@@ -90,14 +118,15 @@ export async function uploadFile(
   uploaderName: string,
   onProgress: (progress: number) => void
 ): Promise<boolean> {
-  const ext = item.file.name.split(".").pop() || "";
+  const ext = item.file.name.split(".").pop()?.toLowerCase() || "";
   const filePath = `${uuidv4()}.${ext}`;
+  const contentType = resolveContentType(item.file);
 
   if (item.abortController.signal.aborted) return false;
 
   onProgress(5);
 
-  const isImage = item.file.type.startsWith("image/");
+  const isImage = contentType.startsWith("image/");
   const exifData = isImage ? await extractExif(item.file) : {
     taken_at: null, width: null, height: null,
     camera_model: null, latitude: null, longitude: null,
@@ -113,10 +142,14 @@ export async function uploadFile(
       .upload(filePath, item.file, {
         cacheControl: "3600",
         upsert: false,
+        contentType,
       });
 
     if (item.abortController.signal.aborted) return false;
-    if (storageError) throw storageError;
+    if (storageError) {
+      console.error(`[upload] Storage error for ${item.file.name}:`, storageError);
+      throw storageError;
+    }
 
     onProgress(80);
 
@@ -124,17 +157,21 @@ export async function uploadFile(
       file_name: item.file.name,
       file_path: filePath,
       file_size: item.file.size,
-      mime_type: item.file.type,
+      mime_type: contentType,
       uploaded_by: uploaderName,
       ...exifData,
     });
 
     if (item.abortController.signal.aborted) return false;
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error(`[upload] DB error for ${item.file.name}:`, dbError);
+      throw dbError;
+    }
 
     onProgress(100);
     return true;
-  } catch {
+  } catch (err) {
+    console.error(`[upload] Failed: ${item.file.name} (type=${item.file.type}, resolved=${contentType})`, err);
     return false;
   }
 }
