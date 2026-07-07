@@ -29,4 +29,5 @@ export type MediaItem = {
   latitude: number | null;
   longitude: number | null;
   poster_path: string | null;
+  duration: number | null;
 };
