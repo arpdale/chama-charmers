@@ -24,9 +24,9 @@ function getPublicUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
 }
 
-function getThumbnailUrl(filePath: string, width = 600) {
+function getThumbnailUrl(filePath: string, width = 800) {
   return supabase.storage.from("media").getPublicUrl(filePath, {
-    transform: { width, quality: 75 },
+    transform: { width, resize: "contain", quality: 80 },
   }).data.publicUrl;
 }
 
