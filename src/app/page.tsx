@@ -327,7 +327,7 @@ export default function Home() {
       {/* Upload section */}
       {showUpload && uploaderName && !isEmpty && (
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6">
-          <UploadZone onFilesSelected={handleFilesSelected} />
+          <UploadZone onFilesSelected={handleFilesSelected} onClose={() => setShowUpload(false)} />
         </div>
       )}
 
