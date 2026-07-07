@@ -62,7 +62,27 @@ export function createUploadingItem(file: File): UploadingItem {
   };
 }
 
-async function extractExif(file: File): Promise<ExifData> {
+function extractVideoMeta(file: File): Promise<{ width: number | null; height: number | null }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      resolve({
+        width: video.videoWidth || null,
+        height: video.videoHeight || null,
+      });
+      URL.revokeObjectURL(url);
+    };
+    video.onerror = () => {
+      resolve({ width: null, height: null });
+      URL.revokeObjectURL(url);
+    };
+    video.src = url;
+  });
+}
+
+async function extractExif(file: File, contentType: string): Promise<ExifData> {
   const result: ExifData = {
     taken_at: null,
     width: null,
@@ -71,6 +91,8 @@ async function extractExif(file: File): Promise<ExifData> {
     latitude: null,
     longitude: null,
   };
+
+  const isVideo = contentType.startsWith("video/");
 
   try {
     const exif = await exifr.parse(file, {
@@ -87,28 +109,41 @@ async function extractExif(file: File): Promise<ExifData> {
       gps: true,
     });
 
-    if (!exif) return result;
+    if (exif) {
+      const dateVal = exif.DateTimeOriginal || exif.CreateDate;
+      if (dateVal instanceof Date) {
+        result.taken_at = dateVal.toISOString();
+      } else if (typeof dateVal === "string") {
+        const parsed = new Date(dateVal);
+        if (!isNaN(parsed.getTime())) result.taken_at = parsed.toISOString();
+      }
 
-    const dateVal = exif.DateTimeOriginal || exif.CreateDate;
-    if (dateVal instanceof Date) {
-      result.taken_at = dateVal.toISOString();
-    }
+      result.width = exif.ExifImageWidth || exif.ImageWidth || null;
+      result.height = exif.ExifImageHeight || exif.ImageHeight || null;
 
-    result.width = exif.ExifImageWidth || exif.ImageWidth || null;
-    result.height = exif.ExifImageHeight || exif.ImageHeight || null;
+      if (exif.Model) {
+        result.camera_model = exif.Make
+          ? `${exif.Make} ${exif.Model}`.replace(/\s+/g, " ").trim()
+          : exif.Model;
+      }
 
-    if (exif.Model) {
-      result.camera_model = exif.Make
-        ? `${exif.Make} ${exif.Model}`.replace(/\s+/g, " ").trim()
-        : exif.Model;
-    }
-
-    if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
-      result.latitude = exif.latitude;
-      result.longitude = exif.longitude;
+      if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
+        result.latitude = exif.latitude;
+        result.longitude = exif.longitude;
+      }
     }
   } catch {
     // EXIF extraction is best-effort
+  }
+
+  if (isVideo && !result.width) {
+    const videoMeta = await extractVideoMeta(file);
+    result.width = videoMeta.width;
+    result.height = videoMeta.height;
+  }
+
+  if (!result.taken_at && file.lastModified) {
+    result.taken_at = new Date(file.lastModified).toISOString();
   }
 
   return result;
@@ -140,7 +175,7 @@ function tusUpload(
         contentType,
         cacheControl: "3600",
       },
-      chunkSize: 6 * 1024 * 1024,
+      chunkSize: 1024 * 1024,
       onError(error) {
         reject(error);
       },
@@ -180,10 +215,7 @@ export async function uploadFile(
 
   onProgress(2);
 
-  const isImage = contentType.startsWith("image/");
-  const exifData = isImage
-    ? await extractExif(item.file)
-    : { taken_at: null, width: null, height: null, camera_model: null, latitude: null, longitude: null };
+  const exifData = await extractExif(item.file, contentType);
 
   if (item.abortController.signal.aborted) return false;
 

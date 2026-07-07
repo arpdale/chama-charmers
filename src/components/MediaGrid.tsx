@@ -140,37 +140,42 @@ function justifiedLayout(
 }
 
 function ProgressRing({ progress }: { progress: number }) {
-  const radius = 20;
+  const radius = 24;
   const stroke = 3;
   const normalizedRadius = radius - stroke;
   const circumference = normalizedRadius * 2 * Math.PI;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return (
-    <svg width={radius * 2} height={radius * 2} className="rotate-[-90deg]">
-      <circle
-        stroke="rgba(255,255,255,0.3)"
-        fill="none"
-        strokeWidth={stroke}
-        r={normalizedRadius}
-        cx={radius}
-        cy={radius}
-      />
-      <circle
-        stroke="white"
-        fill="none"
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        r={normalizedRadius}
-        cx={radius}
-        cy={radius}
-        style={{
-          strokeDasharray: `${circumference} ${circumference}`,
-          strokeDashoffset,
-          transition: "stroke-dashoffset 0.3s ease",
-        }}
-      />
-    </svg>
+    <div className="relative" style={{ width: radius * 2, height: radius * 2 }}>
+      <svg width={radius * 2} height={radius * 2} className="rotate-[-90deg]">
+        <circle
+          stroke="rgba(255,255,255,0.3)"
+          fill="none"
+          strokeWidth={stroke}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke="white"
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+          style={{
+            strokeDasharray: `${circumference} ${circumference}`,
+            strokeDashoffset,
+            transition: "stroke-dashoffset 0.3s ease",
+          }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-white text-[10px] font-semibold tabular-nums">
+        {progress}%
+      </span>
+    </div>
   );
 }
 

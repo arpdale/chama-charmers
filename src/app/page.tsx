@@ -264,7 +264,7 @@ export default function Home() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,video/*"
+        accept="image/*,video/*,.heic,.heif,.mov"
         className="hidden"
         onChange={(e) => {
           if (e.target.files) {

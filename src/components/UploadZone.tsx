@@ -63,7 +63,7 @@ export default function UploadZone({ onFilesSelected, onClose }: Props) {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,video/*"
+        accept="image/*,video/*,.heic,.heif,.mov"
         className="hidden"
         onChange={(e) => e.target.files && handleFiles(e.target.files)}
       />
