@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { MediaItem } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 
@@ -36,6 +36,49 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function LightboxVideo({ src }: { src: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [buffering, setBuffering] = useState(true);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onCanPlay = () => {
+      setBuffering(false);
+      video.play().catch(() => {});
+    };
+    const onWaiting = () => setBuffering(true);
+    const onPlaying = () => setBuffering(false);
+
+    video.addEventListener("canplaythrough", onCanPlay);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("playing", onPlaying);
+    return () => {
+      video.removeEventListener("canplaythrough", onCanPlay);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("playing", onPlaying);
+    };
+  }, [src]);
+
+  return (
+    <div className="relative">
+      <video
+        ref={videoRef}
+        src={src}
+        className="max-w-full max-h-[85vh] rounded-lg"
+        controls
+        preload="auto"
+      />
+      {buffering && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-12 h-12 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Lightbox({ item, items, currentUser, onClose, onNavigate, onDelete, onDownload }: Props) {
@@ -168,12 +211,7 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
         onClick={(e) => e.stopPropagation()}
       >
         {isVideo(item.mime_type) ? (
-          <video
-            src={getPublicUrl(item.file_path)}
-            className="max-w-full max-h-[85vh] rounded-lg"
-            controls
-            autoPlay
-          />
+          <LightboxVideo src={getPublicUrl(item.file_path)} />
         ) : (
           <img
             src={getPublicUrl(item.file_path)}
