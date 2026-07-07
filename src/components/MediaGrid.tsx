@@ -143,13 +143,11 @@ function JustifiedGrid({
   currentUser,
   onItemClick,
   onDelete,
-  renderUploadingItems,
 }: {
   items: MediaItem[];
   currentUser: string | null;
   onItemClick: (item: MediaItem) => void;
   onDelete: (item: MediaItem) => void;
-  renderUploadingItems?: React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -181,7 +179,6 @@ function JustifiedGrid({
 
   return (
     <div ref={containerRef}>
-      {renderUploadingItems}
       <div className="media-grid">
         {items.map((item, i) => {
           const size = sizes[i];
@@ -365,7 +362,8 @@ export default function MediaGrid({
 
   return (
     <div className="space-y-8">
-      {groups.map(([date, groupItems], groupIndex) => (
+      {uploadingSection}
+      {groups.map(([date, groupItems]) => (
         <div key={date}>
           <h2
             className="text-sm font-semibold uppercase tracking-wider mb-3 sticky top-0 py-2 z-10"
@@ -378,7 +376,6 @@ export default function MediaGrid({
             currentUser={currentUser}
             onItemClick={onItemClick}
             onDelete={onDelete}
-            renderUploadingItems={groupIndex === 0 ? uploadingSection : undefined}
           />
         </div>
       ))}
