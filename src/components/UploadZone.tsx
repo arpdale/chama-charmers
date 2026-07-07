@@ -4,9 +4,10 @@ import { useState, useCallback, useRef } from "react";
 
 type Props = {
   onFilesSelected: (files: File[]) => void;
+  onClose?: () => void;
 };
 
-export default function UploadZone({ onFilesSelected }: Props) {
+export default function UploadZone({ onFilesSelected, onClose }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,12 +40,25 @@ export default function UploadZone({ onFilesSelected }: Props) {
 
   return (
     <div
-      className={`drop-zone p-8 sm:p-12 text-center cursor-pointer ${isDragging ? "active" : ""}`}
+      className={`drop-zone relative p-8 sm:p-12 text-center cursor-pointer ${isDragging ? "active" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => fileInputRef.current?.click()}
     >
+      {onClose && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          className="absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+          style={{ color: "var(--muted)", background: "var(--border)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; }}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
       <input
         ref={fileInputRef}
         type="file"
