@@ -82,6 +82,60 @@ function extractVideoMeta(file: File): Promise<{ width: number | null; height: n
   });
 }
 
+function generateVideoPoster(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      video.src = "";
+    };
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(1, video.duration / 2);
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { cleanup(); resolve(null); return; }
+        ctx.drawImage(video, 0, 0);
+        canvas.toBlob(
+          (blob) => { cleanup(); resolve(blob); },
+          "image/jpeg",
+          0.8
+        );
+      } catch {
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    video.onerror = () => { cleanup(); resolve(null); };
+    setTimeout(() => { cleanup(); resolve(null); }, 15000);
+    video.src = url;
+  });
+}
+
+async function uploadPoster(posterBlob: Blob, signal: AbortSignal): Promise<string | null> {
+  const posterPath = `posters/${uuidv4()}.jpg`;
+  const { error } = await supabase.storage
+    .from("media")
+    .upload(posterPath, posterBlob, {
+      contentType: "image/jpeg",
+      cacheControl: "31536000",
+    });
+  if (error || signal.aborted) return null;
+  return posterPath;
+}
+
 async function extractExif(file: File, contentType: string): Promise<ExifData> {
   const result: ExifData = {
     taken_at: null,
@@ -235,12 +289,23 @@ export async function uploadFile(
 
     onProgress(97);
 
+    let posterPath: string | null = null;
+    if (contentType.startsWith("video/")) {
+      const posterBlob = await generateVideoPoster(item.file);
+      if (posterBlob && !item.abortController.signal.aborted) {
+        posterPath = await uploadPoster(posterBlob, item.abortController.signal);
+      }
+    }
+
+    onProgress(98);
+
     const { error: dbError } = await supabase.from("media").insert({
       file_name: item.file.name,
       file_path: filePath,
       file_size: item.file.size,
       mime_type: contentType,
       uploaded_by: uploaderName,
+      poster_path: posterPath,
       ...exifData,
     });
 

@@ -28,4 +28,5 @@ export type MediaItem = {
   camera_model: string | null;
   latitude: number | null;
   longitude: number | null;
+  poster_path: string | null;
 };
