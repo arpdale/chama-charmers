@@ -291,11 +291,11 @@ export default function Home() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col">
         {loading ? (
           <div className="media-grid">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {[200, 180, 220, 190, 210, 170, 230, 185, 205, 195, 215, 175].map((h, i) => (
               <div
                 key={i}
                 className="media-grid-item skeleton"
-                style={{ height: `${150 + Math.random() * 150}px` }}
+                style={{ height: `${h}px` }}
               />
             ))}
           </div>
