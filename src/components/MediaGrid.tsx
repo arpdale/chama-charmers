@@ -40,6 +40,7 @@ function useLazyPoster(item: MediaItem) {
   const [posterUrl, setPosterUrl] = useState<string | null>(
     item.poster_path ? getThumbnailUrl(item.poster_path) : null
   );
+  const [duration, setDuration] = useState<number | null>(item.duration);
 
   useEffect(() => {
     if (item.poster_path || !isVideo(item.mime_type)) return;
@@ -54,6 +55,9 @@ function useLazyPoster(item: MediaItem) {
     const src = getPublicUrl(item.file_path);
 
     video.onloadeddata = () => {
+      if (video.duration && isFinite(video.duration)) {
+        setDuration(video.duration);
+      }
       video.currentTime = Math.min(1, video.duration / 2);
     };
 
@@ -65,6 +69,7 @@ function useLazyPoster(item: MediaItem) {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         ctx.drawImage(video, 0, 0);
+        const videoDuration = video.duration && isFinite(video.duration) ? video.duration : null;
         canvas.toBlob(async (blob) => {
           video.src = "";
           if (!blob) return;
@@ -73,7 +78,7 @@ function useLazyPoster(item: MediaItem) {
             .from("media")
             .upload(posterPath, blob, { contentType: "image/jpeg", cacheControl: "31536000" });
           if (error) return;
-          await supabase.from("media").update({ poster_path: posterPath }).eq("id", item.id);
+          await supabase.from("media").update({ poster_path: posterPath, duration: videoDuration }).eq("id", item.id);
           setPosterUrl(getThumbnailUrl(posterPath));
         }, "image/jpeg", 0.8);
       } catch { /* best-effort */ }
@@ -86,7 +91,7 @@ function useLazyPoster(item: MediaItem) {
     return () => { clearTimeout(timeout); video.src = ""; };
   }, [item.id, item.file_path, item.mime_type, item.poster_path]);
 
-  return posterUrl;
+  return { posterUrl, duration };
 }
 
 function formatFileSize(bytes: number) {
@@ -95,7 +100,7 @@ function formatFileSize(bytes: number) {
 }
 
 function VideoThumbnail({ item }: { item: MediaItem }) {
-  const posterUrl = useLazyPoster(item);
+  const { posterUrl, duration } = useLazyPoster(item);
 
   return (
     <>
@@ -121,6 +126,11 @@ function VideoThumbnail({ item }: { item: MediaItem }) {
           </svg>
         </div>
       </div>
+      {duration != null && (
+        <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
+          {formatDuration(duration)}
+        </div>
+      )}
     </>
   );
 }
@@ -131,29 +141,6 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function VideoDuration({ src }: { src: string }) {
-  const [duration, setDuration] = useState<string | null>(null);
-
-  useEffect(() => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.src = src;
-    video.onloadedmetadata = () => {
-      if (video.duration && isFinite(video.duration)) {
-        setDuration(formatDuration(video.duration));
-      }
-    };
-    return () => { video.src = ""; };
-  }, [src]);
-
-  if (!duration) return null;
-
-  return (
-    <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
-      {duration}
-    </div>
-  );
-}
 
 function groupByDate(items: MediaItem[]) {
   const groups: { [key: string]: MediaItem[] } = {};

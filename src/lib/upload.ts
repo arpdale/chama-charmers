@@ -82,7 +82,12 @@ function extractVideoMeta(file: File): Promise<{ width: number | null; height: n
   });
 }
 
-function generateVideoPoster(file: File): Promise<Blob | null> {
+type VideoPosterResult = {
+  poster: Blob | null;
+  duration: number | null;
+};
+
+function generateVideoPoster(file: File): Promise<VideoPosterResult> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
@@ -90,12 +95,17 @@ function generateVideoPoster(file: File): Promise<Blob | null> {
     video.muted = true;
     video.playsInline = true;
 
+    let duration: number | null = null;
+
     const cleanup = () => {
       URL.revokeObjectURL(url);
       video.src = "";
     };
 
     video.onloadeddata = () => {
+      if (video.duration && isFinite(video.duration)) {
+        duration = video.duration;
+      }
       video.currentTime = Math.min(1, video.duration / 2);
     };
 
@@ -105,21 +115,21 @@ function generateVideoPoster(file: File): Promise<Blob | null> {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext("2d");
-        if (!ctx) { cleanup(); resolve(null); return; }
+        if (!ctx) { cleanup(); resolve({ poster: null, duration }); return; }
         ctx.drawImage(video, 0, 0);
         canvas.toBlob(
-          (blob) => { cleanup(); resolve(blob); },
+          (blob) => { cleanup(); resolve({ poster: blob, duration }); },
           "image/jpeg",
           0.8
         );
       } catch {
         cleanup();
-        resolve(null);
+        resolve({ poster: null, duration });
       }
     };
 
-    video.onerror = () => { cleanup(); resolve(null); };
-    setTimeout(() => { cleanup(); resolve(null); }, 15000);
+    video.onerror = () => { cleanup(); resolve({ poster: null, duration: null }); };
+    setTimeout(() => { cleanup(); resolve({ poster: null, duration }); }, 15000);
     video.src = url;
   });
 }
@@ -290,10 +300,12 @@ export async function uploadFile(
     onProgress(97);
 
     let posterPath: string | null = null;
+    let duration: number | null = null;
     if (contentType.startsWith("video/")) {
-      const posterBlob = await generateVideoPoster(item.file);
-      if (posterBlob && !item.abortController.signal.aborted) {
-        posterPath = await uploadPoster(posterBlob, item.abortController.signal);
+      const result = await generateVideoPoster(item.file);
+      duration = result.duration;
+      if (result.poster && !item.abortController.signal.aborted) {
+        posterPath = await uploadPoster(result.poster, item.abortController.signal);
       }
     }
 
@@ -306,6 +318,7 @@ export async function uploadFile(
       mime_type: contentType,
       uploaded_by: uploaderName,
       poster_path: posterPath,
+      duration,
       ...exifData,
     });
 
