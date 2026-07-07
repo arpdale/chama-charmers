@@ -38,26 +38,79 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+const MIN_BUFFER_AHEAD = 10;
+const LOW_BUFFER_THRESHOLD = 3;
+
+function getBufferedAhead(video: HTMLVideoElement): number {
+  const { buffered, currentTime } = video;
+  for (let i = 0; i < buffered.length; i++) {
+    if (buffered.start(i) <= currentTime + 0.5 && buffered.end(i) > currentTime) {
+      return buffered.end(i) - currentTime;
+    }
+  }
+  return 0;
+}
+
+function isBufferSufficient(video: HTMLVideoElement, minSeconds: number): boolean {
+  const ahead = getBufferedAhead(video);
+  const { duration } = video;
+  if (duration && isFinite(duration) && duration <= minSeconds) {
+    return ahead >= duration * 0.9;
+  }
+  return ahead >= minSeconds;
+}
+
 function LightboxVideo({ src }: { src: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [buffering, setBuffering] = useState(true);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    startedRef.current = false;
+    setBuffering(true);
 
-    const onCanPlay = () => {
+    const tryPlay = () => {
+      if (!isBufferSufficient(video, MIN_BUFFER_AHEAD)) return;
       setBuffering(false);
-      video.play().catch(() => {});
+      if (!startedRef.current) {
+        startedRef.current = true;
+        video.play().catch(() => {});
+      }
     };
-    const onWaiting = () => setBuffering(true);
-    const onPlaying = () => setBuffering(false);
 
-    video.addEventListener("canplaythrough", onCanPlay);
+    const onProgress = () => tryPlay();
+    const onCanPlayThrough = () => tryPlay();
+
+    const onTimeUpdate = () => {
+      if (getBufferedAhead(video) < LOW_BUFFER_THRESHOLD) {
+        const { duration, currentTime } = video;
+        const nearEnd = duration && isFinite(duration) && duration - currentTime < LOW_BUFFER_THRESHOLD;
+        if (!nearEnd) {
+          video.pause();
+          setBuffering(true);
+        }
+      }
+    };
+
+    const onWaiting = () => {
+      setBuffering(true);
+    };
+
+    const onPlaying = () => {
+      setBuffering(false);
+    };
+
+    video.addEventListener("progress", onProgress);
+    video.addEventListener("canplaythrough", onCanPlayThrough);
+    video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("playing", onPlaying);
     return () => {
-      video.removeEventListener("canplaythrough", onCanPlay);
+      video.removeEventListener("progress", onProgress);
+      video.removeEventListener("canplaythrough", onCanPlayThrough);
+      video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("playing", onPlaying);
     };
