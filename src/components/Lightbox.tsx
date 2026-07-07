@@ -46,15 +46,18 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
     }
   }, [currentIndex, items, onNavigate]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     const url = getPublicUrl(item.file_path);
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = blobUrl;
     a.download = item.file_name;
-    a.target = "_blank";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
   }, [item]);
 
   useEffect(() => {
