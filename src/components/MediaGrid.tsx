@@ -24,6 +24,12 @@ function getPublicUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
 }
 
+function getThumbnailUrl(filePath: string, width = 600) {
+  return supabase.storage.from("media").getPublicUrl(filePath, {
+    transform: { width, quality: 75 },
+  }).data.publicUrl;
+}
+
 function isVideo(mimeType: string) {
   return mimeType.startsWith("video/");
 }
@@ -389,7 +395,7 @@ function JustifiedGrid({
                 </>
               ) : (
                 <img
-                  src={getPublicUrl(item.file_path)}
+                  src={getThumbnailUrl(item.file_path)}
                   alt={item.file_name}
                   loading="lazy"
                   onLoad={(e) => e.currentTarget.classList.add("loaded")}
