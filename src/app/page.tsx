@@ -39,6 +39,7 @@ function HomeContent() {
   const canUpload = searchParams.get("upload") === "chunky";
 
   const [uploaderName, setUploaderName] = useState<string | null>(null);
+  const [pickerDismissed, setPickerDismissed] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
@@ -49,6 +50,9 @@ function HomeContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isUploader = canUpload && !!uploaderName;
+  const showPicker = canUpload && !uploaderName && !pickerDismissed;
 
   const fetchMedia = useCallback(async () => {
     const { data } = await supabase
@@ -268,15 +272,15 @@ function HomeContent() {
   return (
     <div
       className="flex flex-col min-h-screen relative"
-      onDragEnter={canUpload ? handlePageDragEnter : undefined}
-      onDragOver={canUpload ? handlePageDragOver : undefined}
-      onDragLeave={canUpload ? handlePageDragLeave : undefined}
-      onDrop={canUpload ? handlePageDrop : undefined}
+      onDragEnter={isUploader ? handlePageDragEnter : undefined}
+      onDragOver={isUploader ? handlePageDragOver : undefined}
+      onDragLeave={isUploader ? handlePageDragLeave : undefined}
+      onDrop={isUploader ? handlePageDrop : undefined}
     >
-      {canUpload && !uploaderName && <NamePicker onSelect={handleNameSelect} />}
+      {showPicker && <NamePicker onSelect={handleNameSelect} onDismiss={() => setPickerDismissed(true)} />}
 
       {/* Full-page drag overlay */}
-      {canUpload && isDraggingOver && (
+      {isUploader && isDraggingOver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
           <div
             className="rounded-2xl p-12 text-center"
@@ -300,7 +304,7 @@ function HomeContent() {
       )}
 
       {/* Hidden file input */}
-      {canUpload && <input
+      {isUploader && <input
         ref={fileInputRef}
         type="file"
         multiple
@@ -329,7 +333,7 @@ function HomeContent() {
             </h1>
             <p className="text-xs" style={{ color: "var(--muted)" }}>
               {media.length} {media.length === 1 ? "memory" : "memories"}
-              {canUpload && uploaderName && (
+              {isUploader && (
                 <span>
                   {" "}
                   &middot; uploading as{" "}
@@ -347,7 +351,7 @@ function HomeContent() {
             </p>
           </div>
 
-          {canUpload && !isEmpty && (
+          {isUploader && !isEmpty && (
             <button
               onClick={() => setShowUpload(!showUpload)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium text-white transition-all hover:scale-105 active:scale-95"
@@ -363,7 +367,7 @@ function HomeContent() {
       </header>
 
       {/* Upload section */}
-      {canUpload && showUpload && uploaderName && !isEmpty && (
+      {isUploader && showUpload && !isEmpty && (
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6">
           <UploadZone onFilesSelected={handleFilesSelected} onClose={() => setShowUpload(false)} />
         </div>
@@ -415,7 +419,7 @@ function HomeContent() {
             ))}
           </div>
         ) : isEmpty ? (
-          canUpload ? (
+          isUploader ? (
             <div
               className="flex-1 flex items-center justify-center cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
@@ -457,9 +461,9 @@ function HomeContent() {
           <MediaGrid
             items={filteredMedia}
             uploadingItems={uploadingItems}
-            currentUser={canUpload ? uploaderName : null}
+            currentUser={isUploader ? uploaderName : null}
             selectedIds={selectedIds}
-            readOnly={!canUpload}
+            readOnly={!isUploader}
             onItemClick={(item) => setLightboxItem(item)}
             onCancelUpload={handleCancelUpload}
             onDelete={handleDelete}
@@ -478,7 +482,7 @@ function HomeContent() {
         <Lightbox
           item={lightboxItem}
           items={filteredMedia}
-          currentUser={canUpload ? uploaderName : null}
+          currentUser={isUploader ? uploaderName : null}
           onClose={() => setLightboxItem(null)}
           onNavigate={(item) => setLightboxItem(item)}
           onDelete={handleDelete}
