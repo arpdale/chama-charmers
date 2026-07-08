@@ -42,7 +42,7 @@ export default function Home() {
     const { data } = await supabase
       .from("media")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("taken_at", { ascending: true });
     setMedia((data as MediaItem[]) || []);
     setLoading(false);
   }, []);
