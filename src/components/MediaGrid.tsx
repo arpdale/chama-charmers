@@ -10,6 +10,7 @@ type Props = {
   uploadingItems: UploadingItem[];
   currentUser: string | null;
   selectedIds: Set<string>;
+  readOnly?: boolean;
   onItemClick: (item: MediaItem) => void;
   onCancelUpload: (id: string) => void;
   onDelete: (item: MediaItem) => void;
@@ -375,6 +376,7 @@ function JustifiedGrid({
   currentUser,
   selectedIds,
   menuState,
+  readOnly,
   onItemClick,
   onDelete,
   onDownload,
@@ -386,6 +388,7 @@ function JustifiedGrid({
   currentUser: string | null;
   selectedIds: Set<string>;
   menuState: MenuState;
+  readOnly: boolean;
   onItemClick: (item: MediaItem) => void;
   onDelete: (item: MediaItem) => void;
   onDownload: (item: MediaItem) => void;
@@ -443,7 +446,7 @@ function JustifiedGrid({
                 flexShrink: 0,
               }}
               onClick={() => {
-                if (hasSelection) {
+                if (!readOnly && hasSelection) {
                   onToggleSelect(item.id);
                 } else {
                   onItemClick(item);
@@ -462,25 +465,27 @@ function JustifiedGrid({
               )}
 
               {/* Checkbox — top-left, visible on hover or when any items are selected */}
-              <button
-                className={`absolute top-2 left-2 w-6 h-6 rounded flex items-center justify-center transition-all z-10 ${
-                  isSelected
-                    ? "bg-blue-500 text-white opacity-100"
-                    : hasSelection
-                    ? "bg-black/40 border border-white/50 opacity-100"
-                    : "bg-black/40 border border-white/50 opacity-0 group-hover:opacity-100"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleSelect(item.id);
-                }}
-              >
-                {isSelected && (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
+              {!readOnly && (
+                <button
+                  className={`absolute top-2 left-2 w-6 h-6 rounded flex items-center justify-center transition-all z-10 ${
+                    isSelected
+                      ? "bg-blue-500 text-white opacity-100"
+                      : hasSelection
+                      ? "bg-black/40 border border-white/50 opacity-100"
+                      : "bg-black/40 border border-white/50 opacity-0 group-hover:opacity-100"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelect(item.id);
+                  }}
+                >
+                  {isSelected && (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              )}
 
               {/* Ellipsis menu — top-right, visible on hover */}
               {!hasSelection && (
@@ -543,6 +548,7 @@ export default function MediaGrid({
   uploadingItems,
   currentUser,
   selectedIds,
+  readOnly = false,
   onItemClick,
   onCancelUpload,
   onDelete,
@@ -663,7 +669,7 @@ export default function MediaGrid({
 
   return (
     <div className="space-y-8">
-      {uploadingSection}
+      {!readOnly && uploadingSection}
       {groups.map(([date, groupItems]) => (
         <div key={date}>
           <h2
@@ -677,6 +683,7 @@ export default function MediaGrid({
             currentUser={currentUser}
             selectedIds={selectedIds}
             menuState={menuState}
+            readOnly={readOnly}
             onItemClick={onItemClick}
             onDelete={onDelete}
             onDownload={onDownload}
@@ -688,7 +695,7 @@ export default function MediaGrid({
       ))}
 
       {/* Batch action bar */}
-      {hasSelection && (
+      {!readOnly && hasSelection && (
         <div className="batch-action-bar">
           <span className="text-sm font-medium">
             {selectedIds.size} {selectedIds.size === 1 ? "item" : "items"} selected
