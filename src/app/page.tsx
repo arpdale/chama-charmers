@@ -189,6 +189,27 @@ export default function Home() {
     }
   }, [uploaderName, media, selectedIds, lightboxItem]);
 
+  const handleBatchChangeUploader = useCallback(async (newName: string) => {
+    const selected = media.filter((item) => selectedIds.has(item.id));
+    if (selected.length === 0) return;
+
+    const ids = selected.map((item) => item.id);
+    const { error } = await supabase
+      .from("media")
+      .update({ uploaded_by: newName })
+      .in("id", ids);
+
+    if (error) {
+      console.error("[batch] Failed to change uploader:", error);
+      return;
+    }
+
+    setMedia((prev) =>
+      prev.map((m) => (ids.includes(m.id) ? { ...m, uploaded_by: newName } : m))
+    );
+    setSelectedIds(new Set());
+  }, [media, selectedIds]);
+
   // Global drag-and-drop
   const handlePageDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -419,6 +440,7 @@ export default function Home() {
             onDownload={handleDownloadItem}
             onBatchDownload={handleBatchDownload}
             onBatchDelete={handleBatchDelete}
+            onBatchChangeUploader={handleBatchChangeUploader}
           />
         )}
       </main>

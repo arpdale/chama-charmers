@@ -18,6 +18,7 @@ type Props = {
   onDownload: (item: MediaItem) => void;
   onBatchDownload: () => void;
   onBatchDelete: () => void;
+  onBatchChangeUploader: (name: string) => void;
 };
 
 function getPublicUrl(filePath: string) {
@@ -550,6 +551,7 @@ export default function MediaGrid({
   onDownload,
   onBatchDownload,
   onBatchDelete,
+  onBatchChangeUploader,
 }: Props) {
   const [menuState, setMenuState] = useState<MenuState>(null);
 
@@ -692,6 +694,23 @@ export default function MediaGrid({
             {selectedIds.size} {selectedIds.size === 1 ? "item" : "items"} selected
           </span>
           <div className="flex items-center gap-1">
+            <select
+              className="batch-action-btn appearance-none cursor-pointer pr-6 text-xs"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  onBatchChangeUploader(e.target.value);
+                  e.target.value = "";
+                }
+              }}
+              title="Change uploader"
+              style={{ backgroundImage: "none" }}
+            >
+              <option value="" disabled>Reassign to...</option>
+              {["David", "Nirav", "Ernesto", "Jeff"].map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
             <button
               className="batch-action-btn"
               onClick={onBatchDownload}
