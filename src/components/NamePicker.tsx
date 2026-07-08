@@ -41,8 +41,6 @@ export default function NamePicker({ onSelect, onDismiss }: Props) {
           ))}
         </div>
 
-        <div className="w-full" style={{ borderTop: "1px solid var(--border)" }} />
-
         <button
           onClick={onDismiss}
           className="w-full px-4 py-3 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95"
