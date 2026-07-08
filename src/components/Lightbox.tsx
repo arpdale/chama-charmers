@@ -18,6 +18,12 @@ function getPublicUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
 }
 
+function getImageUrl(filePath: string) {
+  return supabase.storage.from("media").getPublicUrl(filePath, {
+    transform: { width: 2000, resize: "contain", quality: 90 },
+  }).data.publicUrl;
+}
+
 function isVideo(mimeType: string) {
   return mimeType.startsWith("video/");
 }
@@ -267,7 +273,7 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
           <LightboxVideo src={getPublicUrl(item.file_path)} />
         ) : (
           <img
-            src={getPublicUrl(item.file_path)}
+            src={getImageUrl(item.file_path)}
             alt={item.file_name}
             className="max-w-full max-h-[85vh] rounded-lg object-contain"
           />
