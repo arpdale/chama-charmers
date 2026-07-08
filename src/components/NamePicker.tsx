@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 const FRIENDS = ["David", "Jeff", "Ernesto", "Nirav"];
 
 type Props = {
@@ -9,8 +7,6 @@ type Props = {
 };
 
 export default function NamePicker({ onSelect }: Props) {
-  const [customName, setCustomName] = useState("");
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div
@@ -39,51 +35,6 @@ export default function NamePicker({ onSelect }: Props) {
             </button>
           ))}
         </div>
-
-        <div className="relative">
-          <div
-            className="absolute inset-0 flex items-center"
-            aria-hidden="true"
-          >
-            <div className="w-full" style={{ borderTop: "1px solid var(--border)" }} />
-          </div>
-          <div className="relative flex justify-center">
-            <span
-              className="px-3 text-xs"
-              style={{ background: "var(--background)", color: "var(--muted)" }}
-            >
-              or type your name
-            </span>
-          </div>
-        </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (customName.trim()) onSelect(customName.trim());
-          }}
-          className="flex gap-2"
-        >
-          <input
-            type="text"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder="Your name"
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
-            style={{
-              background: "var(--border)",
-              color: "var(--foreground)",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={!customName.trim()}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-40"
-            style={{ background: "var(--accent)" }}
-          >
-            Go
-          </button>
-        </form>
       </div>
     </div>
   );

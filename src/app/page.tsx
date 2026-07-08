@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase, MediaItem } from "@/lib/supabase";
 import { UploadingItem, createUploadingItem, uploadFile, isMediaFile } from "@/lib/upload";
 import UploadZone from "@/components/UploadZone";
@@ -26,6 +27,17 @@ async function downloadBlob(url: string, fileName: string) {
 }
 
 export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const canUpload = searchParams.get("upload") === "chunky";
+
   const [uploaderName, setUploaderName] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,10 +60,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem("chama-uploader-name");
-    if (stored) setUploaderName(stored);
+    if (canUpload) {
+      const stored = localStorage.getItem("chama-uploader-name");
+      if (stored) setUploaderName(stored);
+    }
     fetchMedia();
-  }, [fetchMedia]);
+  }, [fetchMedia, canUpload]);
 
   const handleNameSelect = (name: string) => {
     setUploaderName(name);
@@ -254,15 +268,15 @@ export default function Home() {
   return (
     <div
       className="flex flex-col min-h-screen relative"
-      onDragEnter={handlePageDragEnter}
-      onDragOver={handlePageDragOver}
-      onDragLeave={handlePageDragLeave}
-      onDrop={handlePageDrop}
+      onDragEnter={canUpload ? handlePageDragEnter : undefined}
+      onDragOver={canUpload ? handlePageDragOver : undefined}
+      onDragLeave={canUpload ? handlePageDragLeave : undefined}
+      onDrop={canUpload ? handlePageDrop : undefined}
     >
-      {!uploaderName && <NamePicker onSelect={handleNameSelect} />}
+      {canUpload && !uploaderName && <NamePicker onSelect={handleNameSelect} />}
 
       {/* Full-page drag overlay */}
-      {isDraggingOver && (
+      {canUpload && isDraggingOver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
           <div
             className="rounded-2xl p-12 text-center"
@@ -286,7 +300,7 @@ export default function Home() {
       )}
 
       {/* Hidden file input */}
-      <input
+      {canUpload && <input
         ref={fileInputRef}
         type="file"
         multiple
@@ -298,7 +312,7 @@ export default function Home() {
             e.target.value = "";
           }
         }}
-      />
+      />}
 
       {/* Header */}
       <header
@@ -315,7 +329,7 @@ export default function Home() {
             </h1>
             <p className="text-xs" style={{ color: "var(--muted)" }}>
               {media.length} {media.length === 1 ? "memory" : "memories"}
-              {uploaderName && (
+              {canUpload && uploaderName && (
                 <span>
                   {" "}
                   &middot; uploading as{" "}
@@ -333,7 +347,7 @@ export default function Home() {
             </p>
           </div>
 
-          {!isEmpty && (
+          {canUpload && !isEmpty && (
             <button
               onClick={() => setShowUpload(!showUpload)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium text-white transition-all hover:scale-105 active:scale-95"
@@ -349,7 +363,7 @@ export default function Home() {
       </header>
 
       {/* Upload section */}
-      {showUpload && uploaderName && !isEmpty && (
+      {canUpload && showUpload && uploaderName && !isEmpty && (
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6">
           <UploadZone onFilesSelected={handleFilesSelected} onClose={() => setShowUpload(false)} />
         </div>
@@ -401,37 +415,51 @@ export default function Home() {
             ))}
           </div>
         ) : isEmpty ? (
-          <div
-            className="flex-1 flex items-center justify-center cursor-pointer"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className="drop-zone p-16 sm:p-20 text-center max-w-lg w-full">
-              <svg
-                className="w-16 h-16 mx-auto mb-6"
-                style={{ color: "var(--muted)" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <p className="text-xl font-semibold mb-2">
-                Drop your trip photos here
-              </p>
-              <p style={{ color: "var(--muted)" }}>
-                or click to browse
-              </p>
-              <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
-                Supports iPhone, Samsung, and GoPro formats
-              </p>
+          canUpload ? (
+            <div
+              className="flex-1 flex items-center justify-center cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="drop-zone p-16 sm:p-20 text-center max-w-lg w-full">
+                <svg
+                  className="w-16 h-16 mx-auto mb-6"
+                  style={{ color: "var(--muted)" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p className="text-xl font-semibold mb-2">
+                  Drop your trip photos here
+                </p>
+                <p style={{ color: "var(--muted)" }}>
+                  or click to browse
+                </p>
+                <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
+                  Supports iPhone, Samsung, and GoPro formats
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <p className="text-xl font-semibold mb-2" style={{ color: "var(--muted)" }}>
+                  No photos yet
+                </p>
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  Check back soon!
+                </p>
+              </div>
+            </div>
+          )
         ) : (
           <MediaGrid
             items={filteredMedia}
             uploadingItems={uploadingItems}
-            currentUser={uploaderName}
+            currentUser={canUpload ? uploaderName : null}
             selectedIds={selectedIds}
+            readOnly={!canUpload}
             onItemClick={(item) => setLightboxItem(item)}
             onCancelUpload={handleCancelUpload}
             onDelete={handleDelete}
@@ -450,7 +478,7 @@ export default function Home() {
         <Lightbox
           item={lightboxItem}
           items={filteredMedia}
-          currentUser={uploaderName}
+          currentUser={canUpload ? uploaderName : null}
           onClose={() => setLightboxItem(null)}
           onNavigate={(item) => setLightboxItem(item)}
           onDelete={handleDelete}
