@@ -41,12 +41,18 @@ export default function NamePicker({ onSelect, onDismiss }: Props) {
           ))}
         </div>
 
+        <div className="w-full" style={{ borderTop: "1px solid var(--border)" }} />
+
         <button
           onClick={onDismiss}
-          className="w-full px-4 py-3 rounded-xl text-sm transition-all hover:scale-105 active:scale-95"
-          style={{ color: "var(--muted)" }}
+          className="w-full px-4 py-3 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95"
+          style={{
+            border: "1px solid var(--border)",
+            color: "var(--muted)",
+            background: "transparent",
+          }}
         >
-          Just browsing
+          I&apos;m just checking it out
         </button>
       </div>
     </div>
