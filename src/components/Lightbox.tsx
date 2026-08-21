@@ -28,6 +28,33 @@ function isVideo(mimeType: string) {
   return mimeType.startsWith("video/");
 }
 
+// Public Cloudflare Stream playback host (appears in viewer URLs, not secret).
+const CF_STREAM_HOST = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_CUSTOMER;
+
+// Cloudflare's hosted adaptive-bitrate player. Handles HLS, buffering, and
+// codec compatibility across browsers — replaces the manual buffering logic
+// below for any video that has been transcoded into Stream.
+function StreamPlayer({ uid, aspect }: { uid: string; aspect: number }) {
+  return (
+    <div
+      style={{
+        width: `min(90vw, ${(85 * aspect).toFixed(2)}vh)`,
+        aspectRatio: `${aspect}`,
+        maxHeight: "85vh",
+      }}
+    >
+      <iframe
+        src={`https://${CF_STREAM_HOST}/${uid}/iframe`}
+        loading="lazy"
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+        allowFullScreen
+        className="rounded-lg"
+        style={{ border: 0, width: "100%", height: "100%" }}
+      />
+    </div>
+  );
+}
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
     weekday: "short",
@@ -270,7 +297,14 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
         onClick={(e) => e.stopPropagation()}
       >
         {isVideo(item.mime_type) ? (
-          <LightboxVideo src={getPublicUrl(item.file_path)} />
+          item.stream_uid && CF_STREAM_HOST ? (
+            <StreamPlayer
+              uid={item.stream_uid}
+              aspect={(item.width || 16) / (item.height || 9)}
+            />
+          ) : (
+            <LightboxVideo src={getPublicUrl(item.file_path)} />
+          )
         ) : (
           <img
             src={getImageUrl(item.file_path)}
