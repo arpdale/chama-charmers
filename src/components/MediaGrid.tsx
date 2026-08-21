@@ -41,6 +41,12 @@ function isVideo(mimeType: string) {
 
 const posterBackfillAttempted = new Set<string>();
 
+// Client-side poster generation downloads the whole original to grab a frame,
+// so only attempt it for small clips (typical phone videos). Anything larger
+// relies on the upload-time poster or the server-side backfill; it shows a
+// placeholder rather than pulling hundreds of MB in the browser.
+const MAX_CLIENT_POSTER_BYTES = 50 * 1024 * 1024;
+
 // Backfills a poster for videos that don't have one yet. Only runs when
 // `enabled` (i.e. the thumbnail is scrolled into view) — generating a poster
 // downloads the full original client-side, so we must never do it eagerly for
@@ -54,6 +60,7 @@ function useLazyPoster(item: MediaItem, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     if (item.poster_path || !isVideo(item.mime_type)) return;
+    if (item.file_size > MAX_CLIENT_POSTER_BYTES) return;
     if (posterBackfillAttempted.has(item.id)) return;
     posterBackfillAttempted.add(item.id);
 
