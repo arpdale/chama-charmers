@@ -9,8 +9,20 @@ import MediaGrid from "@/components/MediaGrid";
 import Lightbox from "@/components/Lightbox";
 import NamePicker from "@/components/NamePicker";
 
+const PAGE_SIZE = 100;
+
 function getPublicUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
+}
+
+// Chronological (oldest first), matching the grid's date grouping. Used for
+// both paginated pages and locally-appended uploads so ordering stays stable.
+function sortMedia(items: MediaItem[]) {
+  return [...items].sort((a, b) => {
+    const ta = new Date(a.taken_at || a.created_at).getTime();
+    const tb = new Date(b.taken_at || b.created_at).getTime();
+    return ta - tb;
+  });
 }
 
 async function downloadBlob(url: string, fileName: string) {
@@ -42,6 +54,8 @@ function HomeContent() {
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [showUpload, setShowUpload] = useState(false);
@@ -50,17 +64,41 @@ function HomeContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // How many rows we've pulled from the server, used as the pagination offset.
+  // Kept separate from media.length so locally-appended uploads don't shift it.
+  const loadedCountRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const isUploader = canUpload && !!uploaderName;
   const showPicker = canUpload && !uploaderName && !pickerDismissed;
 
-  const fetchMedia = useCallback(async () => {
-    const { data } = await supabase
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+
+    const from = loadedCountRef.current;
+    const { data, error } = await supabase
       .from("media")
       .select("*")
-      .order("taken_at", { ascending: true });
-    setMedia((data as MediaItem[]) || []);
+      .order("taken_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (!error && data) {
+      const rows = data as MediaItem[];
+      loadedCountRef.current += rows.length;
+      setMedia((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        const fresh = rows.filter((r) => !seen.has(r.id));
+        return fresh.length ? sortMedia([...prev, ...fresh]) : prev;
+      });
+      setHasMore(rows.length === PAGE_SIZE);
+    }
+
     setLoading(false);
+    setLoadingMore(false);
+    loadingMoreRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -68,8 +106,23 @@ function HomeContent() {
       const stored = localStorage.getItem("chama-uploader-name");
       if (stored) setUploaderName(stored);
     }
-    fetchMedia();
-  }, [fetchMedia, canUpload]);
+    loadMore();
+  }, [loadMore, canUpload]);
+
+  // Infinite scroll: load the next page when the sentinel nears the viewport.
+  // Depends on `loading` too so it re-attaches once the sentinel first mounts.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMore();
+      },
+      { rootMargin: "600px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadMore]);
 
   const handleNameSelect = (name: string) => {
     setUploaderName(name);
@@ -89,7 +142,8 @@ function HomeContent() {
           setUploadingItems((prev) =>
             prev.map((u) => (u.id === item.id ? { ...u, progress } : u))
           );
-        }).then((success) => {
+        }).then((inserted) => {
+          const success = !!inserted;
           setUploadingItems((prev) =>
             prev.map((u) =>
               u.id === item.id
@@ -97,8 +151,14 @@ function HomeContent() {
                 : u
             )
           );
-          if (success) {
-            fetchMedia();
+          if (inserted) {
+            // Insert the new row locally instead of refetching the whole table.
+            // Dedupe by id in case a later page also picks it up.
+            setMedia((prev) =>
+              prev.some((m) => m.id === inserted.id)
+                ? prev
+                : sortMedia([...prev, inserted])
+            );
             setTimeout(() => {
               setUploadingItems((prev) => prev.filter((u) => u.id !== item.id));
               URL.revokeObjectURL(item.previewUrl);
@@ -112,7 +172,7 @@ function HomeContent() {
         });
       });
     },
-    [uploaderName, fetchMedia]
+    [uploaderName]
   );
 
   const handleCancelUpload = useCallback((id: string) => {
@@ -474,6 +534,15 @@ function HomeContent() {
             onBatchDelete={handleBatchDelete}
             onBatchChangeUploader={handleBatchChangeUploader}
           />
+        )}
+
+        {/* Infinite-scroll sentinel + spinner */}
+        {!loading && !isEmpty && hasMore && (
+          <div ref={sentinelRef} className="flex justify-center py-8">
+            {loadingMore && (
+              <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" style={{ color: "var(--muted)" }} />
+            )}
+          </div>
         )}
       </main>
 
