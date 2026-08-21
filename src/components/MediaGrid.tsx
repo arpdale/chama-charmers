@@ -26,9 +26,12 @@ function getPublicUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
 }
 
-function getThumbnailUrl(filePath: string, width = 800) {
+// Grid rows target ~220px tall (see targetHeight below), so bounding the
+// transform to 800x440 covers 2x retina while avoiding the old width-only:800
+// request that shipped ~2-4x more pixels than displayed for portrait photos.
+function getThumbnailUrl(filePath: string) {
   return supabase.storage.from("media").getPublicUrl(filePath, {
-    transform: { width, resize: "contain", quality: 80 },
+    transform: { width: 800, height: 440, resize: "contain", quality: 75 },
   }).data.publicUrl;
 }
 
@@ -38,13 +41,18 @@ function isVideo(mimeType: string) {
 
 const posterBackfillAttempted = new Set<string>();
 
-function useLazyPoster(item: MediaItem) {
+// Backfills a poster for videos that don't have one yet. Only runs when
+// `enabled` (i.e. the thumbnail is scrolled into view) — generating a poster
+// downloads the full original client-side, so we must never do it eagerly for
+// every video on the page.
+function useLazyPoster(item: MediaItem, enabled: boolean) {
   const [posterUrl, setPosterUrl] = useState<string | null>(
     item.poster_path ? getThumbnailUrl(item.poster_path) : null
   );
   const [duration, setDuration] = useState<number | null>(item.duration);
 
   useEffect(() => {
+    if (!enabled) return;
     if (item.poster_path || !isVideo(item.mime_type)) return;
     if (posterBackfillAttempted.has(item.id)) return;
     posterBackfillAttempted.add(item.id);
@@ -91,7 +99,7 @@ function useLazyPoster(item: MediaItem) {
     video.src = src;
 
     return () => { clearTimeout(timeout); video.src = ""; };
-  }, [item.id, item.file_path, item.mime_type, item.poster_path]);
+  }, [enabled, item.id, item.file_path, item.mime_type, item.poster_path]);
 
   return { posterUrl, duration };
 }
@@ -102,7 +110,29 @@ function formatFileSize(bytes: number) {
 }
 
 function VideoThumbnail({ item }: { item: MediaItem }) {
-  const { posterUrl, duration } = useLazyPoster(item);
+  const [inView, setInView] = useState(false);
+  const placeholderRef = useRef<HTMLDivElement>(null);
+  const { posterUrl, duration } = useLazyPoster(item, inView);
+
+  // Observe the placeholder and only kick off poster generation once it's near
+  // the viewport. Once we have a poster the placeholder unmounts and we stop
+  // observing. Never render the full original <video> as a thumbnail.
+  useEffect(() => {
+    if (posterUrl) return;
+    const el = placeholderRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "300px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [posterUrl]);
 
   return (
     <>
@@ -114,11 +144,10 @@ function VideoThumbnail({ item }: { item: MediaItem }) {
           onLoad={(e) => e.currentTarget.classList.add("loaded")}
         />
       ) : (
-        <video
-          src={getPublicUrl(item.file_path)}
-          preload="metadata"
-          muted
-          onLoadedData={(e) => e.currentTarget.classList.add("loaded")}
+        <div
+          ref={placeholderRef}
+          className="w-full h-full"
+          style={{ background: "var(--border)" }}
         />
       )}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
