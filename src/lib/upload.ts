@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, MediaItem } from "./supabase";
 import { v4 as uuidv4 } from "uuid";
 import * as tus from "tus-js-client";
 import exifr from "exifr";
@@ -237,7 +237,10 @@ function tusUpload(
         bucketName: "media",
         objectName: filePath,
         contentType,
-        cacheControl: "3600",
+        // Originals live at immutable UUID paths, so cache them at the CDN for
+        // a year. The previous 1h TTL meant full-res downloads (lightbox, HEIC
+        // transforms, download button) kept re-hitting origin.
+        cacheControl: "31536000",
       },
       chunkSize: file.size > 10 * 1024 * 1024 ? 6 * 1024 * 1024 : 1024 * 1024,
       onError(error) {
@@ -273,18 +276,18 @@ export async function uploadFile(
   item: UploadingItem,
   uploaderName: string,
   onProgress: (progress: number) => void
-): Promise<boolean> {
+): Promise<MediaItem | null> {
   const ext = item.file.name.split(".").pop()?.toLowerCase() || "";
   const filePath = `${uuidv4()}.${ext}`;
   const contentType = resolveContentType(item.file);
 
-  if (item.abortController.signal.aborted) return false;
+  if (item.abortController.signal.aborted) return null;
 
   onProgress(2);
 
   const exifData = await extractExif(item.file, contentType);
 
-  if (item.abortController.signal.aborted) return false;
+  if (item.abortController.signal.aborted) return null;
 
   try {
     await tusUpload(
@@ -295,7 +298,7 @@ export async function uploadFile(
       item.abortController.signal
     );
 
-    if (item.abortController.signal.aborted) return false;
+    if (item.abortController.signal.aborted) return null;
 
     onProgress(97);
 
@@ -311,27 +314,33 @@ export async function uploadFile(
 
     onProgress(98);
 
-    const { error: dbError } = await supabase.from("media").insert({
-      file_name: item.file.name,
-      file_path: filePath,
-      file_size: item.file.size,
-      mime_type: contentType,
-      uploaded_by: uploaderName,
-      poster_path: posterPath,
-      duration,
-      ...exifData,
-    });
+    const { data: inserted, error: dbError } = await supabase
+      .from("media")
+      .insert({
+        file_name: item.file.name,
+        file_path: filePath,
+        file_size: item.file.size,
+        mime_type: contentType,
+        uploaded_by: uploaderName,
+        poster_path: posterPath,
+        duration,
+        ...exifData,
+      })
+      .select()
+      .single();
 
-    if (item.abortController.signal.aborted) return false;
+    if (item.abortController.signal.aborted) return null;
     if (dbError) {
       console.error(`[upload] DB error for ${item.file.name}:`, dbError);
       throw dbError;
     }
 
     onProgress(100);
-    return true;
+    // Return the persisted row so callers can insert it into local state
+    // without refetching the whole table.
+    return inserted as MediaItem;
   } catch (err) {
     console.error(`[upload] Failed: ${item.file.name} (type=${item.file.type}, resolved=${contentType}, size=${item.file.size})`, err);
-    return false;
+    return null;
   }
 }
