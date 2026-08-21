@@ -30,4 +30,5 @@ export type MediaItem = {
   longitude: number | null;
   poster_path: string | null;
   duration: number | null;
+  stream_uid: string | null;
 };
