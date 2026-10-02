@@ -1,6 +1,6 @@
 # Supabase to Neon migration
 
-Prepared October 2, 2026 on `migration/neon-cloudflare`. Production cutover requires explicit approval. Supabase remains available for rollback; nothing there has been deleted or paused.
+Prepared October 2, 2026 on `migration/neon-cloudflare`. The user approved production cutover after reviewing the preview. Supabase remains available for rollback; its database and Storage writes are frozen, and nothing has been deleted, paused or retired.
 
 ## Destinations and costs
 
@@ -36,7 +36,7 @@ Browser Supabase and TUS dependencies are removed. `/api/media`, `/api/session`,
 
 Server-only runtime variables: `APP_DATABASE_URL` (restricted `chama_app` role), `SESSION_SECRET`, `UPLOAD_ACCESS_TOKEN`, `MIGRATION_READ_ONLY`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`. Only `NEXT_PUBLIC_CLOUDFLARE_STREAM_CUSTOMER` is public. Migration/maintenance additionally uses admin `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_STREAM_TOKEN`. Never deploy the admin database URL to the application.
 
-`MIGRATION_READ_ONLY` must explicitly equal `false` to permit mutations. Production migration configuration defaults to read-only. The final read-only preview credentials are scoped to Git branch `migration/neon-cloudflare` and the production Neon data. Write tests used a separate immutable deployment linked to `migration-verification`; those test records are excluded from the final preview. Legacy Vercel production Supabase variables remain for rollback until approved cutover; replacement application code does not consume them. Local source variables were moved into private migration-only configuration.
+`MIGRATION_READ_ONLY` must explicitly equal `false` to permit mutations. Production migration configuration defaults to read-only. The final read-only preview credentials are scoped to Git branch `migration/neon-cloudflare` and the production Neon data. Write tests used a separate immutable deployment linked to `migration-verification`; those test records are excluded from the final preview. Legacy Vercel production Supabase variables were removed during the approved cutover; their values and the previous deployment configuration are retained privately for rollback. Local source variables were moved into private migration-only configuration.
 
 `neon.ts` uses the current GA top-level auth/buckets/functions configuration; `preview.*` is deprecated. The requested hello function is deployed separately from the Vercel application backend. AI Gateway was not enabled by this migration.
 
@@ -69,12 +69,20 @@ node --env-file=.migration-private/test.env scripts/migration/verify-restore.mjs
 
 For a fresh frozen snapshot, run `export-source.sql` through the Supabase SQL MCP connection and save its `export` value as private JSON. Set `MIGRATION_BACKUP_DIR` to a new directory inside `.local-backups` and run `save-source-export.mjs <private-json-file>`. All import/transfer/derivative/check scripts accept this variable. The splitter refuses existing snapshots. Take fresh schema/data dumps alongside this portable snapshot. Never overwrite the initial backup or use a stale snapshot for final synchronization.
 
-## Proposed cutover procedure (not yet executed)
+## Cutover and rollback procedure
 
-1. Capture exact source grants and policy definitions privately. Stop every maintenance writer. Apply `scripts/migration/freeze-source.sql` only after explicit approval. Test old database and Storage write credentials and wait for in-flight operations. If any writer still succeeds, stop.
+1. Capture exact source grants and policy definitions privately. Stop every maintenance writer. Apply `scripts/migration/freeze-source.sql` only after explicit approval. The reversible statement triggers also block owner/bypass-RLS access because Supabase can restore Storage grants. Test old database and Storage write credentials and wait for in-flight operations. If any writer still succeeds, stop.
 2. Take fresh source schema/data dumps, media rows/checksums and complete object inventory. Compare with the immutable initial backup. Source remains frozen throughout final sync. If any rows/files changed, import the fresh source-authoritative state into a fresh Neon branch and migrate/verify its complete object set before promotion; do not overwrite conflicting target writes. Keep the initial source and target snapshot intact.
 3. Verify all rows/files and build a production-environment deployment with production Neon credentials and writes disabled. Test the immutable deployment directly. Do not promote the test-branch preview as production: it contains test records.
 4. Remove obsolete Supabase variables from new production configuration after preserving rollback configuration. Promote the verified production deployment, verify the public domain, then enable target writes and test one controlled write. Old source writes remain disabled so stale clients cannot create split-brain data.
 5. Continue retaining Supabase and all private backups until the user explicitly authorizes retirement. Old external Supabase URLs cannot be redirected from that vendor hostname; they continue working while the source is retained.
 
 Before target writes begin, rollback can restore the previous Vercel deployment/configuration and exact source grants. After target writes begin, first disable target writes, export every new/changed/deleted row and original/poster file, reconcile these into Supabase and verify them, then switch traffic back and restore source writes. Repointing alone would lose target-era changes. Soft-deleted rows and private originals allow this reconciliation. No cleanup, cancellation or retirement is authorized by approval of cutover alone.
+
+## Approved production cutover evidence
+
+The frozen portable snapshot matched every original row checksum and all 80 complete Storage metadata records. No delta transfer was needed. Fresh schema/data SQL dumps and the portable frozen export are private in `.local-backups/2026-10-02-cutover`; original byte backups remain in the initial backup directory. Old anonymous database writes return 401 (permission denied) and Storage writes return 500 (masked trigger error); owner-role no-op writes against both tables explicitly raised the blocking SQLSTATE 55000. Reads remain available for rollback.
+
+The production-environment build was tested with writes disabled: 69 gallery records, 36 initial HTML images, no Supabase requests and write rejection 503. It was promoted to `https://chama-charmers.vercel.app`, where reads were verified before enabling target writes. The previous production deployment is `dpl_Ezi3dYtKvpu6iMRMTJaSf11G4gAL`; rollback environment and project configuration are private in `.migration-private/vercel-before-cutover.env` and `.migration-private/vercel-project-before-cutover.json`.
+
+Production write verification passed 15 HTTP checks: a controlled PNG multipart upload, exact SHA-256 original download with native attachment headers, JPEG thumbnail generation, invalid-link/anonymous rejection, another uploader ownership denial and own-item soft deletion. All 69 original rows still match exact PostgreSQL checksums. The verification item is soft-deleted, with its small private original retained for audit/rollback; there are still 69 active gallery items. Production Supabase variables and admin database URL variables are absent. Sensitive server variables cannot be recovered through CLI env pull; the original source URL/key rollback values were confirmed present in the private pre-cutover export.
