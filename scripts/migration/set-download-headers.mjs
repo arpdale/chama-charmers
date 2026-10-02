@@ -5,7 +5,7 @@ import { S3Client, HeadObjectCommand, PutObjectCommand, CreateMultipartUploadCom
 
 // Add native download headers without changing original paths or bytes. Neon
 // ignores GetObject response header overrides, so headers must be stored.
-const root = '.local-backups/2026-10-02';
+const root = process.env.MIGRATION_BACKUP_DIR || '.local-backups/2026-10-02';
 const snapshot = JSON.parse(await readFile(`${root}/source-snapshot.json`, 'utf8'));
 const verified = JSON.parse(await readFile(`${root}/target-checksums.json`, 'utf8'));
 const client = new S3Client({ forcePathStyle:true, requestChecksumCalculation:'WHEN_REQUIRED' });

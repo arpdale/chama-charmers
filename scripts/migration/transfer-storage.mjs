@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { S3Client, HeadObjectCommand, GetObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
-const root = '.local-backups/2026-10-02';
+const root = process.env.MIGRATION_BACKUP_DIR || '.local-backups/2026-10-02';
 const source = JSON.parse(await readFile(`${root}/source-snapshot.json`, 'utf8'));
 const checksums = JSON.parse(await readFile(`${root}/storage-checksums.json`, 'utf8'));
 if (checksums.length !== source.objects.length) throw new Error('File backup incomplete');

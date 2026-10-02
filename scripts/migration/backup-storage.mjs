@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { resolve, dirname } from 'node:path';
 
-const root = resolve(process.argv[2] || '.local-backups/2026-10-02');
+const root = resolve(process.argv[2] || process.env.MIGRATION_BACKUP_DIR || '.local-backups/2026-10-02');
 const snapshot = JSON.parse(await readFile(`${root}/source-snapshot.json`, 'utf8'));
 const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
 if (!base) throw new Error('Source URL missing');

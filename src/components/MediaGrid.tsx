@@ -328,7 +328,9 @@ function JustifiedGrid({
   onMenuClose: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
+  // Render real image tags during SSR so the browser can start thumbnails
+  // before hydration. ResizeObserver replaces this estimate after mounting.
+  const [containerWidth, setContainerWidth] = useState(1200);
 
   const hasSelection = selectedIds.size > 0;
 

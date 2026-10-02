@@ -9,9 +9,13 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 assert.equal(process.env.NEON_BRANCH, 'migration-verification');
 const base = process.env.TEST_APP_URL || 'http://localhost:3001';
 const results = [];
+const browserState = process.env.TEST_APP_COOKIE_FILE ? JSON.parse(await fs.readFile(process.env.TEST_APP_COOKIE_FILE,'utf8')) : null;
+const host = new URL(base).hostname;
+const accessCookies = browserState?.data.cookies.filter(c => c.name !== 'chama-session' && (host === c.domain || host.endsWith(c.domain.replace(/^\./,'')))).map(c=>`${c.name}=${c.value}`).join('; ');
 const headers = { Origin: new URL(base).origin, 'Content-Type': 'application/json' };
 async function request(path, method, body, cookie, status = 200, extra = {}) {
-  const response = await fetch(base + path, { method, headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}), ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const cookieHeader=[accessCookies,cookie].filter(Boolean).join('; ');
+  const response = await fetch(base + path, { method, headers: { ...headers, ...(cookieHeader ? { Cookie: cookieHeader } : {}), ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
   assert.equal(response.status, status, `${method} ${path}: ${await response.clone().text()}`);
   results.push({ method, path, status });
   return response;
@@ -21,7 +25,9 @@ async function session(name) {
   return r.headers.get('set-cookie').split(';')[0];
 }
 const rows = await (await request('/api/media', 'GET')).json();
-assert.equal(rows.filter(r => r.file_name !== 'migration-verification.png').length, 69);
+const source=JSON.parse(await fs.readFile('.local-backups/2026-10-02/source-snapshot.json','utf8'));
+assert(source.media.every(m=>rows.some(r=>r.id===m.id)), 'All original media records present');
+const baselineCount=rows.filter(r=>r.file_name!=='migration-verification.png').length;
 await request('/api/media', 'POST', {}, undefined, 401);
 await request('/api/media', 'POST', {}, 'chama-session=invalid', 401);
 await request('/api/session', 'POST', { key: 'invalid', name: 'David' }, undefined, 403);
@@ -73,10 +79,10 @@ assert.equal(retained.ContentLength, body.length, 'Soft deletion retains rollbac
 
 const url = new URL(process.env.APP_DATABASE_URL); url.searchParams.set('sslmode', 'verify-full');
 const db = new pg.Client({ connectionString: url.toString() }); await db.connect();
-assert.equal(Number((await db.query('SELECT count(*) FROM media')).rows[0].count), 69);
+assert.equal(Number((await db.query('SELECT count(*) FROM media')).rows[0].count), baselineCount);
 await assert.rejects(db.query("INSERT INTO media(file_name,file_path,file_size,mime_type,uploaded_by) VALUES('x','x',1,'image/png','David')"), /row-level security/);
 await assert.rejects(db.query('DELETE FROM media'), /permission denied/);
 await assert.rejects(db.query('CREATE TABLE public.unauthorized(id int)'), /permission denied/);
 await db.end();
-await fs.writeFile('.migration-private/app-verification.json', JSON.stringify({ branch: process.env.NEON_BRANCH, results, multipartBytes: body.length, checksum: 'matched', privateStorage: true, rls: 'verified', completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
+await fs.writeFile(base.includes('localhost') ? '.migration-private/app-verification.json' : '.migration-private/hosted-app-verification.json', JSON.stringify({ branch: process.env.NEON_BRANCH, applicationUrl:base, results, multipartBytes: body.length, checksum: 'matched', privateStorage: true, rls: 'verified', completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
 console.log(`Verified ${results.length} HTTP checks, multipart image upload/download checksum, derivatives, soft deletion and database permissions`);

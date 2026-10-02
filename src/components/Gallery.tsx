@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, Suspense } from "react";
 import { api, mediaUrl, type MediaItem } from "@/lib/media";
 import type { UploadingItem } from "@/lib/upload";
 import { isMediaFile } from "@/lib/file-types";
@@ -11,6 +10,14 @@ import Lightbox from "@/components/Lightbox";
 import NamePicker from "@/components/NamePicker";
 
 const PAGE_SIZE = 36;
+function subscribeLocation(listener: () => void) {
+  window.addEventListener("popstate", listener);
+  return () => window.removeEventListener("popstate", listener);
+}
+function hasUploadLink() {
+  return !!new URLSearchParams(window.location.search).get("upload");
+}
+function publicGallery() { return false; }
 
 function getPublicUrl(filePath: string) {
   return mediaUrl(filePath);
@@ -35,21 +42,21 @@ function downloadOriginal(url: string, fileName: string) {
   document.body.removeChild(a);
 }
 
-export default function Gallery({ initialMedia }: { initialMedia: MediaItem[] }) {
+export default function Gallery({ initialMedia, initialCount }: { initialMedia: MediaItem[]; initialCount: number }) {
   return (
     <Suspense>
-      <HomeContent initialMedia={initialMedia} />
+      <HomeContent initialMedia={initialMedia} initialCount={initialCount} />
     </Suspense>
   );
 }
 
-function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
-  const searchParams = useSearchParams();
-  const canUpload = !!searchParams.get("upload");
+function HomeContent({ initialMedia, initialCount }: { initialMedia: MediaItem[]; initialCount: number }) {
+  const canUpload = useSyncExternalStore(subscribeLocation, hasUploadLink, publicGallery);
 
   const [uploaderName, setUploaderName] = useState<string | null>(null);
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>(initialMedia);
+  const [totalCount, setTotalCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -101,10 +108,10 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
     if (canUpload) {
       const stored = localStorage.getItem("chama-uploader-name");
       if (stored) {
-        api("/api/session", { name: stored, key: searchParams.get("upload") }).then(() => setUploaderName(stored)).catch(() => localStorage.removeItem("chama-uploader-name"));
+        api("/api/session", { name: stored, key: new URLSearchParams(window.location.search).get("upload") }).then(() => setUploaderName(stored)).catch(() => localStorage.removeItem("chama-uploader-name"));
       }
     }
-  }, [canUpload, searchParams]);
+  }, [canUpload]);
 
   // Infinite scroll: load the next page when the sentinel nears the viewport.
   // Depends on `loading` too so it re-attaches once the sentinel first mounts.
@@ -123,7 +130,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
 
   const handleNameSelect = async (name: string) => {
     try {
-      await api("/api/session", { name, key: searchParams.get("upload") });
+      await api("/api/session", { name, key: new URLSearchParams(window.location.search).get("upload") });
       setUploaderName(name);
       localStorage.setItem("chama-uploader-name", name);
     } catch (error) { window.alert(error instanceof Error ? error.message : "Upload access denied"); }
@@ -153,6 +160,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
             )
           );
           if (inserted) {
+            setTotalCount((count) => count + 1);
             // Insert the new row locally instead of refetching the whole table.
             // Dedupe by id in case a later page also picks it up.
             setMedia((prev) =>
@@ -204,6 +212,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
       catch (error) { window.alert(error instanceof Error ? error.message : "Delete failed"); return; }
 
       setMedia((prev) => prev.filter((m) => m.id !== item.id));
+      setTotalCount((count) => count - 1);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.delete(item.id);
@@ -260,6 +269,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
 
     const deletedIds = new Set(selected.map((item) => item.id));
     setMedia((prev) => prev.filter((m) => !deletedIds.has(m.id)));
+    setTotalCount((count) => count - deletedIds.size);
     setSelectedIds(new Set());
     if (lightboxItem && deletedIds.has(lightboxItem.id)) {
       setLightboxItem(null);
@@ -385,7 +395,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
               Chama Charmers
             </h1>
             <p className="text-xs" style={{ color: "var(--muted)" }}>
-              {media.length} {media.length === 1 ? "memory" : "memories"}
+              {totalCount} {totalCount === 1 ? "memory" : "memories"}
               {isUploader && (
                 <span>
                   {" "}

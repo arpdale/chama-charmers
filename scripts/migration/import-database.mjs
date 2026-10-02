@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 import pg from 'pg';
 pg.types.setTypeParser(20, Number);
-const root = '.local-backups/2026-10-02';
+const root = process.env.MIGRATION_BACKUP_DIR || '.local-backups/2026-10-02';
 const backup = JSON.parse(await readFile(`${root}/source-snapshot.json`, 'utf8'));
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL_UNPOOLED });
 await client.connect();
@@ -45,7 +45,10 @@ try {
   let env = await readFile('.env.local','utf8');
   if (!env.includes('APP_DATABASE_URL=')) env += `\nAPP_DATABASE_URL=${appUrl}\n`;
   if (!env.includes('SESSION_SECRET=')) env += `SESSION_SECRET=${randomBytes(32).toString('hex')}\n`;
-  if (!env.includes('UPLOAD_ACCESS_TOKEN=')) env += 'UPLOAD_ACCESS_TOKEN=chunky\n';
+  if (!env.includes('UPLOAD_ACCESS_TOKEN=')) {
+    if (!process.env.UPLOAD_ACCESS_TOKEN) throw new Error('UPLOAD_ACCESS_TOKEN must be configured privately');
+    env += `UPLOAD_ACCESS_TOKEN=${JSON.stringify(process.env.UPLOAD_ACCESS_TOKEN)}\n`;
+  }
   if (!env.includes('MIGRATION_READ_ONLY=')) env += 'MIGRATION_READ_ONLY=true\n';
   await writeFile('.env.local',env,{mode:0o600});
   await writeFile(`${root}/database-verification.json`,JSON.stringify({ rows: target.length, source_sha256:sourceHash,target_sha256:targetHash,all_columns_equal:true },null,2),{mode:0o600});

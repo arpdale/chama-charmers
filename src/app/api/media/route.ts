@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const offset = z.coerce.number().int().min(0).max(100000).parse(input.get("offset") || 0);
     const limit = z.coerce.number().int().min(1).max(100).parse(input.get("limit") || 100);
     const all = await gallery();
-    return Response.json(all.slice(offset, offset + limit), { headers: { "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300" } });
+    return Response.json(all.slice(offset, offset + limit), { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return failure(error); }
 }
 const insertSchema = z.object({ receipt: z.string().max(4096), posterReceipt: z.string().max(4096).nullable(), taken_at: z.string().datetime().nullable(), width: z.number().int().positive().max(100000).nullable(), height: z.number().int().positive().max(100000).nullable(), camera_model: z.string().max(200).nullable(), latitude: z.number().min(-90).max(90).nullable(), longitude: z.number().min(-180).max(180).nullable(), duration: z.number().nonnegative().max(86400).nullable() });

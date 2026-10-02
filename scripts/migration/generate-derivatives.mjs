@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import convert from 'heic-convert';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-const root='.local-backups/2026-10-02';
+const root = process.env.MIGRATION_BACKUP_DIR || '.local-backups/2026-10-02';
 const backup=JSON.parse(await readFile(`${root}/source-snapshot.json`,'utf8'));
 const s3=new S3Client({forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED'});
 const photos=backup.media.filter(m=>m.mime_type.startsWith('image/')).map(m=>({path:m.file_path,type:m.mime_type}));
