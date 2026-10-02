@@ -1,7 +1,7 @@
-import { supabase, MediaItem } from "./supabase";
+import { api, type MediaItem } from "./media";
 import { v4 as uuidv4 } from "uuid";
-import * as tus from "tus-js-client";
 import exifr from "exifr";
+import { resolveContentType } from "./file-types";
 
 export type UploadingItem = {
   id: string;
@@ -21,33 +21,6 @@ type ExifData = {
   latitude: number | null;
   longitude: number | null;
 };
-
-const MIME_BY_EXT: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  heic: "image/heic",
-  heif: "image/heif",
-  mp4: "video/mp4",
-  m4v: "video/mp4",
-  mov: "video/quicktime",
-  avi: "video/x-msvideo",
-  "3gp": "video/3gpp",
-};
-
-function resolveContentType(file: File): string {
-  if (file.type && file.type !== "application/octet-stream") {
-    return file.type;
-  }
-  const ext = file.name.split(".").pop()?.toLowerCase() || "";
-  return MIME_BY_EXT[ext] || "application/octet-stream";
-}
-
-export function isMediaFile(file: File): boolean {
-  const type = resolveContentType(file);
-  return type.startsWith("image/") || type.startsWith("video/");
-}
 
 export function createUploadingItem(file: File): UploadingItem {
   const mime = resolveContentType(file);
@@ -135,15 +108,10 @@ function generateVideoPoster(file: File): Promise<VideoPosterResult> {
 }
 
 async function uploadPoster(posterBlob: Blob, signal: AbortSignal): Promise<string | null> {
-  const posterPath = `posters/${uuidv4()}.jpg`;
-  const { error } = await supabase.storage
-    .from("media")
-    .upload(posterPath, posterBlob, {
-      contentType: "image/jpeg",
-      cacheControl: "31536000",
-    });
-  if (error || signal.aborted) return null;
-  return posterPath;
+  try {
+    const result = await multipartUpload(posterBlob, `${uuidv4()}.jpg`, "image/jpeg", () => {}, signal, true);
+    return result.receipt;
+  } catch { return null; }
 }
 
 async function extractExif(file: File, contentType: string): Promise<ExifData> {
@@ -213,63 +181,69 @@ async function extractExif(file: File, contentType: string): Promise<ExifData> {
   return result;
 }
 
-function tusUpload(
-  file: File,
-  filePath: string,
-  contentType: string,
-  onProgress: (pct: number) => void,
-  signal: AbortSignal
-): Promise<void> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
+async function putPart(url: string, body: Blob, signal: AbortSignal, progress: (bytes: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
-    const upload = new tus.Upload(file, {
-      endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
-      retryDelays: [0, 1000, 3000, 5000],
-      headers: {
-        authorization: `Bearer ${supabaseKey}`,
-        "x-upsert": "false",
-      },
-      uploadDataDuringCreation: true,
-      removeFingerprintOnSuccess: true,
-      metadata: {
-        bucketName: "media",
-        objectName: filePath,
-        contentType,
-        // Originals live at immutable UUID paths, so cache them at the CDN for
-        // a year. The previous 1h TTL meant full-res downloads (lightbox, HEIC
-        // transforms, download button) kept re-hitting origin.
-        cacheControl: "31536000",
-      },
-      chunkSize: file.size > 10 * 1024 * 1024 ? 6 * 1024 * 1024 : 1024 * 1024,
-      onError(error) {
-        const detail = (error as { originalResponse?: { getBody?: () => string } })
-          .originalResponse?.getBody?.() || error.message;
-        console.error(`[upload] TUS error for ${filePath}:`, detail);
-        reject(error);
-      },
-      onProgress(bytesUploaded, bytesTotal) {
-        const pct = Math.round((bytesUploaded / bytesTotal) * 100);
-        onProgress(pct);
-      },
-      onSuccess() {
-        resolve();
-      },
-    });
-
-    signal.addEventListener("abort", () => {
-      upload.abort(true);
-      reject(new Error("Upload cancelled"));
-    });
-
-    upload.findPreviousUploads().then((previousUploads) => {
-      if (previousUploads.length > 0) {
-        upload.resumeFromPreviousUpload(previousUploads[0]);
-      }
-      upload.start();
-    });
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    if (signal.aborted) { reject(new Error("Upload cancelled")); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    const clean = () => signal.removeEventListener("abort", abort);
+    xhr.open("PUT", url);
+    xhr.upload.onprogress = event => progress(event.loaded);
+    xhr.onload = () => {
+      clean();
+      const etag = xhr.getResponseHeader("ETag");
+      if (xhr.status >= 200 && xhr.status < 300 && etag) resolve(etag);
+      else reject(new Error(`Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => { clean(); reject(new Error("Upload connection failed")); };
+    xhr.onabort = () => { clean(); reject(new Error("Upload cancelled")); };
+    xhr.send(body);
   });
+}
+
+async function multipartUpload(file: Blob, name: string, type: string, onProgress: (pct: number) => void, signal: AbortSignal, poster = false, owner = ""): Promise<{ key: string; receipt: string }> {
+  const fingerprint = `chama-upload:${owner}:${name}:${file.size}:${file instanceof File ? file.lastModified : 0}`;
+  type State = { token: string; key: string; chunkSize: number; parts: { PartNumber: number; ETag: string }[]; expires: number };
+  let state: State | null = null;
+  if (!poster) {
+    try { const previous = JSON.parse(localStorage.getItem(fingerprint) || "null"); if (previous?.expires > Date.now()) state = previous; } catch { /* storage unavailable */ }
+  }
+  if (!state) {
+    const start = await api<{ token: string; key: string; chunkSize: number }>("/api/uploads", { operation: "initiate", name, type, size: file.size, poster }, "POST", signal);
+    state = { ...start, parts: [], expires: Date.now() + 23 * 3600000 };
+  }
+  const save = () => { if (!poster) { try { localStorage.setItem(fingerprint, JSON.stringify(state)); } catch { /* optional resumability */ } } };
+  save();
+  try {
+    const count = Math.ceil(file.size / state.chunkSize);
+    for (let part = state.parts.length + 1; part <= count; part++) {
+      const offset = (part - 1) * state.chunkSize;
+      const body = file.slice(offset, Math.min(file.size, offset + state.chunkSize));
+      let etag = "";
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { url } = await api<{ url: string }>("/api/uploads", { operation: "part", token: state.token, part }, "POST", signal);
+          etag = await putPart(url, body, signal, bytes => onProgress(Math.round((offset + bytes) / file.size * 100)));
+          break;
+        } catch (error) {
+          if (signal.aborted || attempt === 2) throw error;
+          await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000));
+        }
+      }
+      state.parts.push({ PartNumber: part, ETag: etag });
+      save();
+    }
+    const completed = await api<{ key: string; receipt: string }>("/api/uploads", { operation: "complete", token: state.token, parts: state.parts }, "POST", signal);
+    try { localStorage.removeItem(fingerprint); } catch { /* optional */ }
+    return completed;
+  } catch (error) {
+    if (signal.aborted) {
+      await api("/api/uploads", { operation: "abort", token: state.token }).catch(() => {});
+      try { localStorage.removeItem(fingerprint); } catch { /* optional */ }
+    }
+    throw error;
+  }
 }
 
 export async function uploadFile(
@@ -277,8 +251,6 @@ export async function uploadFile(
   uploaderName: string,
   onProgress: (progress: number) => void
 ): Promise<MediaItem | null> {
-  const ext = item.file.name.split(".").pop()?.toLowerCase() || "";
-  const filePath = `${uuidv4()}.${ext}`;
   const contentType = resolveContentType(item.file);
 
   if (item.abortController.signal.aborted) return null;
@@ -290,12 +262,14 @@ export async function uploadFile(
   if (item.abortController.signal.aborted) return null;
 
   try {
-    await tusUpload(
+    const uploaded = await multipartUpload(
       item.file,
-      filePath,
+      item.file.name,
       contentType,
       (pct) => onProgress(Math.max(2, Math.min(95, pct))),
-      item.abortController.signal
+      item.abortController.signal,
+      false,
+      uploaderName
     );
 
     if (item.abortController.signal.aborted) return null;
@@ -314,26 +288,12 @@ export async function uploadFile(
 
     onProgress(98);
 
-    const { data: inserted, error: dbError } = await supabase
-      .from("media")
-      .insert({
-        file_name: item.file.name,
-        file_path: filePath,
-        file_size: item.file.size,
-        mime_type: contentType,
-        uploaded_by: uploaderName,
-        poster_path: posterPath,
-        duration,
-        ...exifData,
-      })
-      .select()
-      .single();
-
-    if (item.abortController.signal.aborted) return null;
-    if (dbError) {
-      console.error(`[upload] DB error for ${item.file.name}:`, dbError);
-      throw dbError;
-    }
+    const inserted = await api<MediaItem>("/api/media", {
+      receipt: uploaded.receipt,
+      posterReceipt: posterPath,
+      duration,
+      ...exifData,
+    }, "POST", item.abortController.signal);
 
     onProgress(100);
     // Return the persisted row so callers can insert it into local state

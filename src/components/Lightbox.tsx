@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useCallback, useRef, useState } from "react";
-import { MediaItem } from "@/lib/supabase";
-import { supabase } from "@/lib/supabase";
+import Image from "next/image";
+import { type MediaItem, mediaUrl } from "@/lib/media";
 
 type Props = {
   item: MediaItem;
@@ -15,13 +15,11 @@ type Props = {
 };
 
 function getPublicUrl(filePath: string) {
-  return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
+  return mediaUrl(filePath);
 }
 
 function getImageUrl(filePath: string) {
-  return supabase.storage.from("media").getPublicUrl(filePath, {
-    transform: { width: 2000, resize: "contain", quality: 90 },
-  }).data.publicUrl;
+  return mediaUrl(filePath, "view");
 }
 
 function isVideo(mimeType: string) {
@@ -306,7 +304,7 @@ export default function Lightbox({ item, items, currentUser, onClose, onNavigate
             <LightboxVideo src={getPublicUrl(item.file_path)} />
           )
         ) : (
-          <img
+          <Image unoptimized width={2000} height={2000}
             src={getImageUrl(item.file_path)}
             alt={item.file_name}
             className="max-w-full max-h-[85vh] rounded-lg object-contain"

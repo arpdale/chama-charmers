@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
-import { MediaItem } from "@/lib/supabase";
+import Image from "next/image";
+import { type MediaItem, mediaUrl } from "@/lib/media";
 import { UploadingItem } from "@/lib/upload";
-import { supabase } from "@/lib/supabase";
 
 type Props = {
   items: MediaItem[];
@@ -22,129 +22,25 @@ type Props = {
   onBatchChangeUploader: (name: string) => void;
 };
 
-function getPublicUrl(filePath: string) {
-  return supabase.storage.from("media").getPublicUrl(filePath).data.publicUrl;
-}
-
 // Grid rows target ~220px tall (see targetHeight below), so bounding the
 // transform to 800x440 covers 2x retina while avoiding the old width-only:800
 // request that shipped ~2-4x more pixels than displayed for portrait photos.
 function getThumbnailUrl(filePath: string) {
-  return supabase.storage.from("media").getPublicUrl(filePath, {
-    transform: { width: 800, height: 440, resize: "contain", quality: 75 },
-  }).data.publicUrl;
+  return mediaUrl(filePath, "thumb");
 }
 
 function isVideo(mimeType: string) {
   return mimeType.startsWith("video/");
 }
 
-const posterBackfillAttempted = new Set<string>();
-
-// Client-side poster generation downloads the whole original to grab a frame,
-// so only attempt it for small clips (typical phone videos). Anything larger
-// relies on the upload-time poster or the server-side backfill; it shows a
-// placeholder rather than pulling hundreds of MB in the browser.
-const MAX_CLIENT_POSTER_BYTES = 50 * 1024 * 1024;
-
-// Backfills a poster for videos that don't have one yet. Only runs when
-// `enabled` (i.e. the thumbnail is scrolled into view) — generating a poster
-// downloads the full original client-side, so we must never do it eagerly for
-// every video on the page.
-function useLazyPoster(item: MediaItem, enabled: boolean) {
-  const [posterUrl, setPosterUrl] = useState<string | null>(
-    item.poster_path ? getThumbnailUrl(item.poster_path) : null
-  );
-  const [duration, setDuration] = useState<number | null>(item.duration);
-
-  useEffect(() => {
-    if (!enabled) return;
-    if (item.poster_path || !isVideo(item.mime_type)) return;
-    if (item.file_size > MAX_CLIENT_POSTER_BYTES) return;
-    if (posterBackfillAttempted.has(item.id)) return;
-    posterBackfillAttempted.add(item.id);
-
-    const video = document.createElement("video");
-    video.preload = "auto";
-    video.muted = true;
-    video.playsInline = true;
-    video.crossOrigin = "anonymous";
-    const src = getPublicUrl(item.file_path);
-
-    video.onloadeddata = () => {
-      if (video.duration && isFinite(video.duration)) {
-        setDuration(video.duration);
-      }
-      video.currentTime = Math.min(1, video.duration / 2);
-    };
-
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(video, 0, 0);
-        const videoDuration = video.duration && isFinite(video.duration) ? video.duration : null;
-        canvas.toBlob(async (blob) => {
-          video.src = "";
-          if (!blob) return;
-          const posterPath = `posters/${item.file_path.replace(/\.[^.]+$/, "")}.jpg`;
-          const { error } = await supabase.storage
-            .from("media")
-            .upload(posterPath, blob, { contentType: "image/jpeg", cacheControl: "31536000" });
-          if (error) return;
-          await supabase.from("media").update({ poster_path: posterPath, duration: videoDuration }).eq("id", item.id);
-          setPosterUrl(getThumbnailUrl(posterPath));
-        }, "image/jpeg", 0.8);
-      } catch { /* best-effort */ }
-    };
-
-    video.onerror = () => { video.src = ""; };
-    const timeout = setTimeout(() => { video.src = ""; }, 30000);
-    video.src = src;
-
-    return () => { clearTimeout(timeout); video.src = ""; };
-  }, [enabled, item.id, item.file_path, item.mime_type, item.poster_path]);
-
-  return { posterUrl, duration };
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function VideoThumbnail({ item }: { item: MediaItem }) {
-  const [inView, setInView] = useState(false);
-  const placeholderRef = useRef<HTMLDivElement>(null);
-  const { posterUrl, duration } = useLazyPoster(item, inView);
-
-  // Observe the placeholder and only kick off poster generation once it's near
-  // the viewport. Once we have a poster the placeholder unmounts and we stop
-  // observing. Never render the full original <video> as a thumbnail.
-  useEffect(() => {
-    if (posterUrl) return;
-    const el = placeholderRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setInView(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "300px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [posterUrl]);
+  const posterUrl = item.poster_path ? mediaUrl(item.poster_path, "thumb") : null;
+  const duration = item.duration;
 
   return (
     <>
       {posterUrl ? (
-        <img
+        <Image unoptimized width={800} height={440}
           src={posterUrl}
           alt={item.file_name}
           loading="lazy"
@@ -152,7 +48,6 @@ function VideoThumbnail({ item }: { item: MediaItem }) {
         />
       ) : (
         <div
-          ref={placeholderRef}
           className="w-full h-full"
           style={{ background: "var(--border)" }}
         />
@@ -492,7 +387,7 @@ function JustifiedGrid({
               {isVideo(item.mime_type) ? (
                 <VideoThumbnail item={item} />
               ) : (
-                <img
+                <Image unoptimized width={800} height={440}
                   src={getThumbnailUrl(item.file_path)}
                   alt={item.file_name}
                   loading="lazy"
@@ -667,7 +562,7 @@ export default function MediaGrid({
                 preload="metadata"
               />
             ) : (
-              <img
+              <Image unoptimized width={800} height={440}
                 src={item.previewUrl}
                 alt=""
                 className="w-full h-full object-cover opacity-60"
