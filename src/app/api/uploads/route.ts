@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { storage, BUCKET, objectInfo } from "@/lib/server/storage";
+import { storage, BUCKET, objectInfo, downloadDisposition } from "@/lib/server/storage";
 import { uploader, sign, verify, failure, ApiError } from "@/lib/server/security";
 
 const types = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp", "video/mp4", "video/quicktime", "video/x-msvideo", "video/3gpp"];
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       if (input.poster && (input.type !== "image/jpeg" || input.size > 10 * 1024 ** 2)) throw new ApiError(400, "Invalid poster");
       const ext = input.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").slice(0, 12) || "bin";
       const key = `${input.poster ? "posters/" : ""}${randomUUID()}.${ext}`;
-      const result = await storage().send(new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key, ContentType: input.type, CacheControl: "public, max-age=31536000, immutable", Metadata: { uploaded_by: name } }));
+      const result = await storage().send(new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key, ContentType: input.type, ContentDisposition: downloadDisposition(input.name), CacheControl: "public, max-age=31536000, immutable", Metadata: { uploaded_by: name } }));
       return Response.json({ token: sign({ kind: "multipart", key, uploadId: result.UploadId, owner: name, size: input.size, type: input.type, filename: input.name, exp: Date.now() + 86400000 }), key, chunkSize: 8 * 1024 ** 2 });
     }
     const token = verify(input.token);

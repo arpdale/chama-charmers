@@ -26,17 +26,13 @@ function sortMedia(items: MediaItem[]) {
   });
 }
 
-async function downloadBlob(url: string, fileName: string) {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
+function downloadOriginal(url: string, fileName: string) {
   const a = document.createElement("a");
-  a.href = blobUrl;
+  a.href = url;
   a.download = fileName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(blobUrl);
 }
 
 export default function Gallery({ initialMedia }: { initialMedia: MediaItem[] }) {
@@ -220,7 +216,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
 
   const handleDownloadItem = useCallback(async (item: MediaItem) => {
     const url = getPublicUrl(item.file_path);
-    await downloadBlob(url, item.file_name);
+    downloadOriginal(url, item.file_name);
   }, []);
 
   const handleToggleSelect = useCallback((id: string) => {
@@ -242,7 +238,7 @@ function HomeContent({ initialMedia }: { initialMedia: MediaItem[] }) {
   const handleBatchDownload = useCallback(async () => {
     const selected = media.filter((item) => selectedIds.has(item.id));
     for (const item of selected) {
-      await downloadBlob(getPublicUrl(item.file_path), item.file_name);
+      downloadOriginal(getPublicUrl(item.file_path), item.file_name);
     }
     setSelectedIds(new Set());
   }, [media, selectedIds]);
