@@ -1,0 +1,9 @@
+.git
+.env*
+.local-backups
+.migration-private
+.codex
+.agents
+.neon
+node_modules
+skills-lock.json

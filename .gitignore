@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Private migration material and provider credentials
+/.local-backups/
+/.migration-private/
+/.neon
+/.mcp.json
+/.codex/
+/.agents/
+/skills-lock.json
